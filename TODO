@@ -1,84 +1,15 @@
-TODO Certifier: Avoid copying the ws of transactions. To do this we need to remove the buffer that keeps write-sets in validation, and add them directly to the io vector.
+Important:
+* Improvement to node management (join mechanism, eg. with zookeeper?)
+* Ability to remove regular nodes
+* Implement a primitive that deletes keys from tapioca. 
 
-TODO There's some overlap in util/udp.c and libtapioca/tcp_connection.c (functions for setting socket options and so on).
-
-TODO Rename directory "test" to "benchmark".
-
-TODO Implement http_cleanup()
-
-TODO Config file parameters:
-	- batching at the node
-    - replication degree
-	- validation_deliver_interval (DONE)
-	- addresses of recovery learners (DONE)
-
-TODO bloom_test1.c: when checking for false positives, make sure that the key found is not one of the keys already inserted (otherwise it's not a false positive!).
-
-TODO When issuing a remote request, make sure that if the requested item is too old, then:
-	- the get request fails; or
-	- the embedded transactions executing that get request aborts.
-
-TODO Replace validation.c with validation_fast.c (the old validation might be called something like validation_reorder.c).
-
-TODO Try to reduce the space overhead of transactions sent to the certifier.
-
-TODO Set socket buffer size
-
-TODO Possible source of INCONSISTENCY in remote get mechanism:
-Item x is stored on node A, with versions 1 and 2. A transaction t on node B, reads item x with version 1. Suppose item x is not stored locally at node B, so the read becomes a remote read for item x with version 1 on node A. A sends (x, 1) to B, B stores it, t finishes and gets committed.
-Later, t' writes (x, 3), it commits and (x, 3) is broadcast to every node. When node B applies the update, its storage might contain (x, 1), and (x, 3) but not (x, 2). This mechanism breaks SM-Consistency.
-The first fix that comes to mind is: a remote read should include all versions of an item.
-But this does not work either! Going back to the previous example:
-A sends back message m containing (x, 1) and (x, 2). Suppose m gets delayed. In the meantime t' writes (x, 3) and gets committed and broadcast to every node. Since x is not yet in the local storage of B, B can discard (x, 3). B receives m, so its local storage contains (x, 1) and (x, 2). Later, transaction t'' writes (x, 4), it commits and is broadcast to every node. B applies the update and ends up with (x, 1), (x, 2), (x, 4) in its storage.
-
-DONE create a tapioca/util folder, and move some stuff there:
-	- util.c (duplicated in test/ and in db/)
-	- test/opt.c
-	- test/stats.c
-
-DONE In remote.c: handle_key_batch(), does a dummy storage_put()... check this stuff.
-
-DONE Get rid of list.c (used in cm, queue, and recovery)
-
-DONE Replica placement: consider having "fixed locations" were replicas are stored. This allows for somewhat "easier" and more efficient recovery from peers, not all of the nodes are involved in the recovery of a single node. (This is another point against distributed mapping).
-
-DONE Add support for strings in the tshell.
-
-DONE Implement stored procedures mechanism.
-
-DONE Fix SM "total size" counter: it overflows.
-
-DONE add quit command to shell
-
-DONE process_trace:
-	- use options parsing from opt.c 
-	- given a trace: show stats like min/max/avg latency and so on... (added a separate tool for that: trace_stats.c).
-
-DONE Move tapioca/shell to tapioca/app/shell
-
-DONE Shell improvements:
- 	- auto-commit
-	- show latency of commands
-	
-DONE libtapioca.c: forgot evbuffer_free() almost everywhere
-
-DONE Possible memory leaks: check that every val* is free()d using val_free().  Found this mistake in: sm/remote.c, tm/test_sp.c, common/transaction.c.
-
-DONE Stuff that probably is going to be removed:
-		- net.c (done)
-		- client_library (done)
-		- bm (done)
-		- utimer.c (done)
-
-DONE Fix libdsmdb/Makefile: does not compile correctly on Mac OS X.
-
-DONE Merge put_get_test 1, 2 and 3. (Merged put_get_test 1 and 3. It's better to leave put_get_test2 alone as it uses multiple threads, which is not covered in tests 1 and 3).
-
-DONE Fix validation_test1. Currently fails with a segmentation fault.
-
-DONE Rewrite test runners (as already done with put_get_test1.sh) so that they use test_utils.sh:
-	- put_get_test2
-	- put_get_test3
-	- remote_test1
-
-DONE Fix compiler warnings on recovery.c on Linux.
+Nice-to-have:
+* Tapioca's storage also consumes lots of memory. One idea is to change the LRU policy of the storage for getting rid of cached entries when garbage collecting. Implementing LRU requires to keep an ordered list of cached items, which is expensive in terms of memory overhead. Another idea is the following. Replace the storage with BDB (in-memory) and see how performance / memory overhead looks like.
+* Both Tapioca and Paxos do not marshal data before sending messages. Lot's of libraries available so ideally we should just pick one and use it. This is *ugly* but not so critical
+* Port MoSQL to S-DUR (for scalability);
+* Improve use of space in main B+Tree node struct
+* Improved memory handling; malloc in larger blocks as opposed to many small mallocs per key/value happening in B+Tree code right now
+* B+Tree node size flexibility
+* Improved Tapioca caching policy
+* Eg. Ability to decide which keys get cached or not (eg. to avoid caching leaf nodes that are likely never to be read again)
+*
