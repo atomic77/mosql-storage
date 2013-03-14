@@ -1,6 +1,7 @@
 # Object files
 *.o
 
+bin/
 Debug/
 Debug_uc/
 
