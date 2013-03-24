@@ -4,7 +4,7 @@ killall -q -INT cm tapioca
 sleep 0.5
 killall -q -9 cm tapioca
 
-cd ~/branches/tapioca_bdb/Debug_uc
+cd ~/branches/tapioca_bdb/Release
 
 # Launch tapioca node and CM
 
