@@ -1,5 +1,5 @@
 
-PAXOS_DIR=/home/atomic/branches/libpaxos_uc/Debug/
+PAXOS_DIR=/home/atomic/branches/libpaxos/Release/
 
 # Launch acceptors and proposer
 

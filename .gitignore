@@ -3,6 +3,7 @@
 
 bin/
 Debug/
+Release/
 Debug_uc/
 
 # Libraries
