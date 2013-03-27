@@ -1,8 +1,8 @@
 #include "dsmDB_priv.h"
-#include "libpaxos.h"
-#include "libpaxos_messages.h"
 #include "storage.h"
-#include "/home/atomic/branches/libpaxos_uc/include/config_reader.h"
+#include <libpaxos.h>
+#include <libpaxos/libpaxos_messages.h>
+#include <libpaxos/config_reader.h>
 #include "config_reader.h"
 #include "socket_util.h"
 #include "index.h"

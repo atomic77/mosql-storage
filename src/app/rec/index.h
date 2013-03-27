@@ -2,12 +2,11 @@
 #define _INDEX_H
 
 #include "dsmDB_priv.h"
-#include "paxos_config.h"
+#include "storage.h"
+#include <libpaxos.h>
+#include <libpaxos/paxos_config.h>
 #include <unistd.h>
 #include <db.h>
-#include "libpaxos.h"
-//#include "libpaxos_messages.h"
-#include "storage.h"
 
 typedef struct rlog_t {
 //	int log_fd;
