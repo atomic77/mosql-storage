@@ -35,8 +35,8 @@ ADD_CUSTOM_COMMAND(TARGET binarydir
 
 
 #file(COPY ${LIBPAXOS_ROOT}/ring-paxos/acceptor DESTINATION ${PROJECT_BINARY_DIR}/bin)
-file(COPY ${LIBPAXOS_ROOT}/tests/example_acceptor DESTINATION ${PROJECT_BINARY_DIR}/bin)
-file(RENAME ${PROJECT_BINARY_DIR}/bin/example_acceptor ${PROJECT_BINARY_DIR}/bin/acceptor)
+#file(COPY ${LIBPAXOS_ROOT}/tests/example_acceptor DESTINATION ${PROJECT_BINARY_DIR}/bin)
+#file(RENAME ${PROJECT_BINARY_DIR}/bin/example_acceptor ${PROJECT_BINARY_DIR}/bin/acceptor)
 
 file(GLOB ROOT_SCRIPTS ../*.sh)
 file(COPY ${ROOT_SCRIPTS} DESTINATION ${PROJECT_BINARY_DIR}/)
