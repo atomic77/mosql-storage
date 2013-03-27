@@ -1,5 +1,3 @@
-#include_directories(${LIBEVENT_INCLUDE_DIRS})
-#include_directories(/home/sciascid/sw/include)
 
 add_library(tapioca STATIC tcp_connection.c tcp_protocol.c 
 		libtapioca.c mget_result.c)
@@ -17,3 +15,6 @@ set_target_properties(tapioca_shared PROPERTIES OUTPUT_NAME tapioca)
 target_link_libraries(tapioca ${LIBEVENT_LIBRARIES} m rt)
 target_link_libraries(tapioca_shared ${LIBEVENT_LIBRARIES} m rt)
 
+
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/libtapioca/tapioca.h DESTINATION include)
+INSTALL(TARGETS tapioca tapioca_shared DESTINATION lib)
