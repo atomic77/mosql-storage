@@ -1,5 +1,5 @@
 // FIXME Talk to Daniele about a solution to this conflict
-#include "/home/atomic/branches/libpaxos_uc/include/config_reader.h"
+#include <libpaxos/config_reader.h>
 
 #include "config_reader.h"
 #include "dsmDB_priv.h"
