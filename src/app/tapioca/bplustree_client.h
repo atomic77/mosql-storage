@@ -1,3 +1,5 @@
+// FIXME These definitions need to be moved into one of the publicly accessible
+// files installed into include/
 #include <stdlib.h>
 #include <stdint.h>
 
