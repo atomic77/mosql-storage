@@ -22,7 +22,6 @@
 #include "hash.h"
 #include "hashtable.h"
 //#include "transaction.h"
-#include "btree.h"
 #include "bplustree.h"
 
 
@@ -75,10 +74,6 @@ static void handle_put(tcp_client* c, struct evbuffer* b);
 static void handle_mget(tcp_client* c, struct evbuffer* buffer);
 static void handle_mput(tcp_client* c, struct evbuffer* buffer);
 static void handle_mget_put(tcp_client* c, struct evbuffer* buffer);
-static void handle_btree_insert(tcp_client* c, struct evbuffer* buffer);
-static void handle_btree_search(tcp_client* c, struct evbuffer* buffer);
-static void handle_btree_range(tcp_client* c, struct evbuffer* buffer);
-static void handle_btree_update(tcp_client* c, struct evbuffer* buffer);
 
 
 /********************************************************/
@@ -133,10 +128,11 @@ static handler handle[] =
 	  handle_mget,
 	  handle_mput,
 	  handle_mget_put,
-	  handle_btree_search,
-	  handle_btree_insert,
-	  handle_btree_range,
-	  handle_btree_update,
+	  // Previously used for simple btree functions
+	  NULL,
+	  NULL,
+	  NULL,
+	  NULL,
 	  // New B+Tree operations
 	  NULL, // previously used for test_op
 	  handle_bptree_initialize_bpt_session_no_commit,
@@ -569,135 +565,6 @@ static void send_btree_search_result(struct bufferevent* bev, int res, long v) {
 	bufferevent_write(bev, &v, sizeof(long));
 }
 
-
-static void on_btree_search(key* k, val* v, void* arg) {
-	tcp_client* c = (tcp_client*)arg;
-	handle_btree_search(c, bufferevent_get_input(c->buffer_ev));
-}
-
-
-static void handle_btree_search(tcp_client* c, struct evbuffer* buffer) {
-	int rv;
-	long k, v;
-	struct evbuffer* b = evbuffer_copy(buffer);
-	transaction_set_get_cb(c->t, on_btree_search, c);
-	
-	evbuffer_remove(b, &k, sizeof(long));
-	evbuffer_free(b);
-	
-	rv = btree_search(c->t, k, &v);
-	if (rv == -1)
-		return;
-	
-	evbuffer_drain(buffer, evbuffer_get_length(buffer));
-	assert(transaction_read_only(c->t));
-	transaction_clear(c->t);
-	send_btree_search_result(c->buffer_ev, rv, v);
-}
-
-
-static void on_btree_update(key* k, val* v, void* arg) {
-    tcp_client* c = (tcp_client*)arg;
-    handle_btree_update(c, bufferevent_get_input(c->buffer_ev));
-}
-
-
-static void handle_btree_update(tcp_client* c, struct evbuffer* buffer) {
-    int rv;
-    long k, v;
-    struct evbuffer* b = evbuffer_copy(buffer);
-    transaction_set_get_cb(c->t, on_btree_update, c);
-    
-    evbuffer_remove(b, &k, sizeof(long));
-    evbuffer_remove(b, &v, sizeof(long));
-    evbuffer_free(b);
-    
-    // remote read
-    rv = btree_update(c->t, k, v);
-    if (rv == -1) return;
-    
-    // btree update finished
-    evbuffer_drain(buffer, evbuffer_get_length(buffer));
-    
-    if (rv == 0) goto failed;
-
-    rv = transaction_commit(c->t, c->id, on_commit);
-    if (rv < 0) goto failed;
-    evtimer_add(&c->timeout_ev, &commit_timeout);
-    return;
-
-failed:
-    transaction_clear(c->t);
-    send_result(c->buffer_ev, -1);
-}
-
-
-static void on_btree_insert(key* k, val* v, void* arg) {
-	tcp_client* c = (tcp_client*)arg;
-	handle_btree_insert(c, bufferevent_get_input(c->buffer_ev));
-}
-
-
-static void handle_btree_insert(tcp_client* c, struct evbuffer* buffer) {
-	int rv;
-	long k, v;
-	struct evbuffer* b = evbuffer_copy(buffer);
-	transaction_set_get_cb(c->t, on_btree_insert, c);
-	
-	evbuffer_remove(b, &k, sizeof(long));
-	evbuffer_remove(b, &v, sizeof(long));
-	evbuffer_free(b);
-	
-	rv = btree_insert(c->t, k, v);
-	if (rv == -1)
-		return;
-	
-	evbuffer_drain(buffer, evbuffer_get_length(buffer));
-	rv = transaction_commit(c->t, c->id, on_commit);
-	if (rv < 0) {
-		transaction_clear(c->t);
-		send_result(c->buffer_ev, -1);
-		return;
-	}
-	evtimer_add(&c->timeout_ev, &commit_timeout);
-}
-
-static void on_btree_range(key* k, val* v, void* arg) {
-	tcp_client* c = (tcp_client*)arg;
-	handle_btree_range(c, bufferevent_get_input(c->buffer_ev));
-}
-
-static void send_btree_range_result(struct bufferevent* bev, int res, long* range, long range_count) {
-	int size = (range_count + 1) * sizeof(long);
-	bufferevent_write(bev, &size, sizeof(int));
-	bufferevent_write(bev, &res, sizeof(int));
-	bufferevent_write(bev, &range_count, sizeof(long));
-	bufferevent_write(bev, range, range_count * sizeof(long));
-}
-
-static void handle_btree_range(tcp_client* c, struct evbuffer* buffer) {
-	int rv;
-	long min, max;
-	long range[128];
-	long range_count;
-	struct evbuffer* b = evbuffer_copy(buffer);
-	transaction_set_get_cb(c->t, on_btree_range, c);
-	
-	evbuffer_remove(b, &min, sizeof(long));
-	evbuffer_remove(b, &max, sizeof(long));
-	evbuffer_free(b);
-	
-	printf("btree range\n");
-	rv = btree_range(c->t, min, max, range, &range_count);
-	if (rv == -1)
-		return;
-	printf("btree range done\n");
-	
-	evbuffer_drain(buffer, evbuffer_get_length(buffer));
-	assert(transaction_read_only(c->t));
-	transaction_clear(c->t);
-	send_btree_range_result(c->buffer_ev, rv, range, range_count);
-}
 
 static void send_result(struct bufferevent* bev, int res) {
 	int size = 0;

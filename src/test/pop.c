@@ -35,43 +35,6 @@ static struct option options[] =
 };
 
 
-static void* populate_btree_thread(void* arg) {
-	int rv, i, id, node_id;
-	int from, to;
-	tapioca_handle* th;
-	
-	id = *((int*)arg);
-	th = tapioca_open(ip, port);
-	if (th == NULL) {
-		printf("Thread %d: tapioca_open() failed\n", id);
-		return NULL;
-	}
-	
-	node_id = tapioca_node_id(th);
-	
-	from = (nkeys * node_id) + (id * (nkeys/nthreads));
-	to   = from + (nkeys/nthreads);
-	
-	for (i = from; i < to; i++) {
-		do {
-			rv = tapioca_btree_insert(th, (long)i, (long)i);
-		} while (rv < 0);
-	}
-	
-	if (cache) {
-		long v;
-		from = (nkeys * node_id) + (id * (spread/nthreads));
-		to = from + (spread/nthreads);
-		for (i = from; i < to; i++)
-			tapioca_btree_search(th, i, &v);
-	}
-		
-	printf("thread %d: %d - %d\n", id, from, to);
-	tapioca_close(th);
-	
-	return NULL;
-}
-
 static void* verify_thread(void* arg) {
 	int rv, i, id, node_id;
 	int from, to;
@@ -224,8 +187,8 @@ int main(int argc, char *argv[]) {
 	if (spread > nkeys)
 		spread = nkeys;
 	
-	if (btree)
-		start_threads(nthreads, populate_btree_thread);
+	if (btree) { }
+//		start_threads(nthreads, populate_btree_thread);
 	else if (isget)
 		start_threads(nthreads, verify_thread);
 	else

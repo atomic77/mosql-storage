@@ -1,7 +1,9 @@
-// FIXME These definitions need to be moved into one of the publicly accessible
-// files installed into include/
+#ifndef _TAPIOCA_BTREE_H_
+#define _TAPIOCA_BTREE_H_
+
 #include <stdlib.h>
 #include <stdint.h>
+#include "tapioca.h"
 
 #define BPTREE_META_NODE_KEY 0
 #define BPTREE_MAX_NUMBER_FIELDS 9
@@ -96,3 +98,49 @@ int int32cmp (const void *i1, const void *i2, size_t v_ignored);
 int int64cmp (const void *i1, const void *i2, size_t v_ignored);
 int strncmp_mysql(const void *i1, const void *i2, size_t sz);
 
+
+
+tapioca_bptree_id tapioca_bptree_initialize_bpt_session_no_commit(
+		tapioca_handle *th, tapioca_bptree_id tbpt_id,
+		enum bptree_open_flags open_flags, uint32_t execution_id);
+
+tapioca_bptree_id tapioca_bptree_initialize_bpt_session( tapioca_handle *th,
+		tapioca_bptree_id tbpt_id, enum bptree_open_flags open_flags);
+
+int tapioca_bptree_set_num_fields(tapioca_handle *th,
+		tapioca_bptree_id tbpt_id, int16_t num_fields);
+
+int tapioca_bptree_set_field_info(void *p,
+		tapioca_bptree_id tbpt_id, int16_t field_num,
+		int16_t field_sz, enum bptree_field_comparator comparator);
+
+int tapioca_bptree_insert(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+		void *k, int ksize, void *v, int vsize,
+		enum bptree_insert_flags insert_flags);
+
+int tapioca_bptree_update(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+		void *k, int ksize, void *v, int vsize);
+
+int tapioca_bptree_search(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+	void *k,int32_t ksize,void *v, int32_t *vsize);
+
+int tapioca_bptree_index_first(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+	void *k,int32_t *ksize,void *v, int32_t *vsize);
+
+int tapioca_bptree_index_next(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+	void *k,int32_t *ksize,void *v, int32_t *vsize);
+
+int tapioca_bptree_index_next_mget(tapioca_handle *th,tapioca_bptree_id tbpt_id,
+		bptree_mget_result **bmres, int16_t *rows);
+
+int tapioca_bptree_index_first_no_key(tapioca_handle *th,
+		tapioca_bptree_id tbpt_id);
+
+int tapioca_bptree_debug(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+		enum bptree_debug_option debug_opt);
+
+int tapioca_bptree_delete(tapioca_handle *th, tapioca_bptree_id tbpt_id,
+		void *k, int ksize, void *v, int vsize);
+
+
+#endif

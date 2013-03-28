@@ -2,7 +2,7 @@
  * Any code related to bptree functionality that we don't want to put in the
  * core tapioca library files
  */
-#include "bplustree_client.h"
+#include "tapioca_btree.h"
 
 
 void bptree_mget_result_free(bptree_mget_result **bmres)
