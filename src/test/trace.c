@@ -76,32 +76,6 @@ static void log_tx(FILE* f, struct timeval* s, struct timeval* e, int committed,
 }
 
 
-static int btree_read(tapioca_handle* th) {
-	int min = node_id * nkeys;
-    int max = min + nkeys;
-
-	long v;
-	long k = random_between(min, max);
-	return tapioca_btree_search(th, k, &v);
-}
-
-
-static int btree_update(tapioca_handle* th) {
-    int min = node_id * nkeys;
-    int max = min + nkeys;
-
-	long v = 0;
-	long k = random_between(min, max);
-	return tapioca_btree_update(th, k, v);
-}
-
-
-static int btree_insert(tapioca_handle* th) {
-	long v = 0;
-	long k = random_between(0, 1000000000);
-    return tapioca_btree_insert(th, k, v);
-}
-
 
 static int update_transaction(tapioca_handle* th) {
 	int i, k, n = node_id;
@@ -262,13 +236,11 @@ int main(int argc, char *argv[]) {
 	}
 	
 	if (btree) {
-		do_read = btree_read;
-		do_update = btree_insert;
+		// Removed old btree references
 	}
 	
 	if (btree_up) {
-        do_read = btree_read;
-        do_update = btree_update;
+		// Removed old btree references
 	}
 	
 	rv = get_node_id();

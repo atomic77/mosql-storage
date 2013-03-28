@@ -1,8 +1,8 @@
 
-add_library(tapioca STATIC tcp_connection.c tcp_protocol.c 
-		libtapioca.c mget_result.c)
-add_library(tapioca_shared SHARED tcp_connection.c tcp_protocol.c 
-		libtapioca.c mget_result.c)
+set(LIBSOURCES tcp_connection.c tcp_protocol.c 
+		libtapioca.c mget_result.c tcp_protocol_btree.c libtapioca_btree.c)
+add_library(tapioca STATIC ${LIBSOURCES})
+add_library(tapioca_shared SHARED ${LIBSOURCES})
 
 
 IF( CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" )
@@ -16,5 +16,7 @@ target_link_libraries(tapioca ${LIBEVENT_LIBRARIES} m rt)
 target_link_libraries(tapioca_shared ${LIBEVENT_LIBRARIES} m rt)
 
 
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/libtapioca/tapioca.h DESTINATION include)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/libtapioca/tapioca.h DESTINATION include/tapioca)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/libtapioca/tapioca_btree.h DESTINATION include/tapioca)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/libtapioca/mget_result.h DESTINATION include/tapioca)
 INSTALL(TARGETS tapioca tapioca_shared DESTINATION lib)

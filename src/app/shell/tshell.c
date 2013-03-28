@@ -26,10 +26,6 @@ static int gets_cmd(char* args);
 static int put_cmd(char* args);
 static int mget_cmd(char* args);
 static int mput_cmd(char* args);
-static int btree_search_cmd(char* args);
-static int btree_insert_cmd(char* args);
-static int btree_update_cmd(char* args);
-static int btree_range_cmd(char* args);
 static int begin_cmd(char* args);
 static int commit_cmd(char* args);
 static int rollback_cmd(char* args);
@@ -54,10 +50,6 @@ shell_cmd cmds[] = {
 	{ "put", "put <key> <value>", show_time, put_cmd },
 	{ "mget", "get <key 1> ... <key n>", show_time, mget_cmd },
 	{ "mput", "put <key 1> <value 1> ... <key n> <value n>", show_time, mput_cmd },
-	{ "bget", "bget", show_time, btree_search_cmd },
-	{ "bput", "bput", show_time, btree_insert_cmd },
-	{ "bupd", "bupd", show_time, btree_update_cmd },
-	{ "brange", "", show_time, btree_range_cmd },
 	{ "begin", "begin new transaction", hide_time, begin_cmd },
 	{ "commit", "commit the current transaction", show_time, commit_cmd },
 	{ "rollback", "rollback the current transaction", show_time, rollback_cmd },
@@ -440,127 +432,6 @@ static int mput_cmd(char* args) {
 	return 0;
 }
 
-
-static int btree_search_cmd(char* args) {
-	int rv;
-	long k, v;
-
-	if (th == NULL) {
-		fprintf(stderr, "try `open' before `bget'\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &k);
-	if (rv < 0) {
-		fprintf(stderr, "bput: argument 1 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = tapioca_btree_search(th, k, &v);
-	if (rv < 0) {
-		fprintf(stderr, "bget: failed.\n");
-		return -1;
-	}
-	if (rv == 0)
-		printf("null\n");
-	else
-		printf("%ld\n", v);
-	
-	return 0;
-}
-
-
-static int btree_insert_cmd(char* args) {
-	int rv;
-	long k, v;
-	
-	if (th == NULL) {
-		fprintf(stderr, "try `open' before `bput'\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &k);
-	if (rv < 0) {
-		fprintf(stderr, "bput: argument 1 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &v);
-	if (rv < 0) {
-		fprintf(stderr, "bput: argument 2 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = tapioca_btree_insert(th, k, v);
-	if (rv < 0) {
-		fprintf(stderr, "bput: failed.\n");
-		return -1;
-	}
-	printf("committed (%d remote requests)\n", rv);
-	return 0;
-}
-
-
-static int btree_update_cmd(char* args) {
-    int rv;
-    long k, v;
-    
-    if (th == NULL) {
-		fprintf(stderr, "try `open' before `bupd'\n");
-        return -1;
-    }
-    
-    rv = parse_long(&args, &k);
-	if (rv < 0) {
-		fprintf(stderr, "bupd: argument 1 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &v);
-	if (rv < 0) {
-		fprintf(stderr, "bupd: argument 2 not a valid argument\n");
-		return -1;
-	}
-    
-    rv = tapioca_btree_update(th, k, v);
-	if (rv < 0) {
-		fprintf(stderr, "bupd: failed.\n");
-		return -1;
-	}
-	printf("committed (%d remote requests)\n", rv);
-	return 0;
-}
-
-
-static int btree_range_cmd(char* args) {
-	int rv;
-	long min, max;
-	
-	if (th == NULL) {
-		fprintf(stderr, "try `open' before `brange'\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &min);
-	if (rv < 0) {
-		fprintf(stderr, "brange: argument 1 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = parse_long(&args, &max);
-	if (rv < 0) {
-		fprintf(stderr, "brange: argument 2 not a valid argument\n");
-		return -1;
-	}
-	
-	rv = tapioca_btree_range(th, min, max);
-	if (rv < 0) {
-		fprintf(stderr, "brange: failed.\n");
-		return -1;
-	}
-	printf("committed (%d remote requests)\n", rv);
-	return 0;
-}
 
 static int gethex_cmd(char* args) {
 	int i = 0, rv, ksize;
