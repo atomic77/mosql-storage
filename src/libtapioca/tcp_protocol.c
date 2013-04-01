@@ -9,10 +9,7 @@
 #include "tcp_priv.h"
 
 
-#define CHECK_BUFFER_SIZE(b, s) \
- 	assert(evbuffer_get_length(msg) == (s+2*sizeof(int)))
-
-static void get_bptree_result(tcp_handle *h, int *rv, int32_t *vsize, void *v);
+//static void get_bptree_result(tcp_handle *h, int *rv, int32_t *vsize, void *v);
 
 static tcp_handle*
 tcp_handle_new(const char* address, int port) {
@@ -39,7 +36,7 @@ tcp_handle_free(tcp_handle* h) {
 }
 
 
-static struct evbuffer*
+struct evbuffer*
 buffer_with_header(int size, int type) {
     struct evbuffer* msg = evbuffer_new();
     evbuffer_expand(msg, size + 2*sizeof(int));
@@ -49,7 +46,7 @@ buffer_with_header(int size, int type) {
 }
 
 
-static void
+void
 buffer_add_data_with_size(struct evbuffer* msg, void* data, int size) {
     evbuffer_add(msg, &size, sizeof(int));
 	evbuffer_add(msg, data, size);
