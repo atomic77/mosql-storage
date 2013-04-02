@@ -253,6 +253,7 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	Iid++; // Update global instance id
 	
+	printf("Rec learned value size %d\n", size); 
 	struct header* h = (struct header*)value;
 	switch (h->type) {
 		case TRANSACTION_SUBMIT:
@@ -329,6 +330,10 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	signal(SIGINT, sigint);
 	load_config_file(tapioca_conf);
 	
+	
+	// FIXME The rec is not learning properly likely due to the mixture of
+	// compatibility mode libevent and the event2 stuff used by libpaxos; 
+	// need to clean this up
 	event_init();
 	
 	aid = acceptor_id;
@@ -342,19 +347,16 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	socket_make_non_block(send_sock);
 	base = event_base_new();
 
-	learner_init(paxos_conf, on_deliver, NULL, base);
+	struct learner *l = learner_init(paxos_conf, on_deliver, NULL, base);
+	assert(l != NULL);
 	
-/*	sprintf(log_path, "%s/plog_%d", lpconfig_get_log_path(), acceptor_id);
-	pl = plog_open(log_path, MAX_MESSAGE_SIZE);
-	assert(pl != NULL);
-	*/
+	// Open acceptor logs
+    ssm = storage_open(acceptor_id, 0);
+    assert(ssm != NULL);
+
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);
 	rl = rlog_init(rec_db_path);
 	assert(rl != NULL);
-
-    ssm = storage_open(acceptor_id, 0);
-    assert(ssm != NULL);
-//    LOG_MSG(DEBUG, ("Stable storage manager initialized!\n"));
 
 /*	// Reload any keys that happen to be in the BDB log
 	reload_keys();*/

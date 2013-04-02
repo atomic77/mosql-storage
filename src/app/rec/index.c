@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include "index.h"
 
 #include "hash.h"
@@ -36,6 +38,7 @@ rlog * rlog_init(const char *path) {
 	char log_path[512], db_path[512];
     uint32_t open_flags, env_flags;
 	rlog *r = (rlog *) malloc(sizeof(rlog));
+	memset(r, 0, sizeof(rlog));
     r->cur_enabled = 0;
 
     // Set up the environment flags for a transactional environment
@@ -54,11 +57,25 @@ rlog * rlog_init(const char *path) {
     open_flags =
     		DB_CREATE |
     		DB_AUTO_COMMIT;
-
-
-    rv = db_env_create(&r->dbenv, env_flags);
+			
+	rv = db_env_create(&r->dbenv, 0);
+	if (rv != 0) {
+		printf("DB_ENV creation failed: %s\n", db_strerror(rv));
+	}
+	
     assert(rv == 0);
 
+	struct stat sb;
+	int dir_exists = (stat(path, &sb) == 0);
+// 	int db_exists = (stat(db_file_path, &sb) == 0);
+
+	// TODO Include recovery part here for rlog
+	
+	if (!dir_exists && (mkdir(path, S_IRWXU) != 0)) {
+		printf("Failed to create env dir %s: %s\n", path, strerror(errno));
+		return NULL;
+	} 
+    
     sprintf(log_path, "%s/", path);
     sprintf(db_path, "%s/rec.db", path);
     rv = r->dbenv->open(r->dbenv, log_path, env_flags, 0);

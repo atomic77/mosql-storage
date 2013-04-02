@@ -1,0 +1,1 @@
+These are sample configuration files for libpaxos and one and two node configurations of the storage layer. See the scripts folder for some scripts that enable the creation of more complex configuration files for larger deployments
