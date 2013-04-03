@@ -1,4 +1,3 @@
-// FIXME Talk to Daniele about a solution to this conflict
 #include <libpaxos/config_reader.h>
 
 #include "config_reader.h"
@@ -46,8 +45,8 @@ static int max_count = 0;
 
 
 static void print_stats();
-static struct bufferevent*
-	proposer_connect(struct event_base* b, address* a) ;
+// static struct bufferevent*
+// 	proposer_connect(struct event_base* b, address* a) ;
 
 #ifndef MAX_MESSAGE_SIZE
 // This is irrelevant (?) if we are using TCP/UC Paxos
@@ -219,30 +218,6 @@ static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
     }
 }
 
-static struct bufferevent*
-proposer_connect(struct event_base* b, address* a) {
-	struct sockaddr_in sin;
-	struct bufferevent* bev;
-
-	LOG(VRB,("Connecting to proposer %s : %d\n",
-			a->address_string, a->port));
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(a->address_string);
-	sin.sin_port = htons(a->port);
-
-	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
-    bufferevent_enable(bev, EV_WRITE);
-    bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
-	struct sockaddr* saddr = (struct sockaddr*)&sin;
-	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
-        bufferevent_free(bev);
-        return NULL;
-	}
-	event_base_dispatch(b);
-	return bev;
-}
-
 
 static void init(const char* tapioca_config, const char* paxos_config) {
 	int cm_fd, result;
@@ -257,8 +232,10 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	conf = read_config(paxos_config);
 	base = event_base_new();
 
-	bev = proposer_connect(base, &conf->proposers[0]);
+	address p = conf->proposers[0];
+	bev = ev_buffered_connect(base, p.address_string, p.port, EV_WRITE);
 	assert(bev != NULL);
+	bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
 	
 	bytes_left = MAX_COMMAND_SIZE;
 	

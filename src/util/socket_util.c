@@ -131,3 +131,29 @@ void socket_set_send_size(int fd, int size) {
 	rv = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(int));
 	assert(rv == 0);
 }
+
+
+struct bufferevent*
+ev_buffered_connect(struct event_base* b, const char *address_string, int port,
+					short int event_type) {
+	struct sockaddr_in sin;
+	struct bufferevent* bev;
+
+// 	LOG(VRB,("Connecting to proposer %s : %d\n",
+// 			a->address_string, a->port));
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(address_string);
+	sin.sin_port = htons(port);
+
+	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
+    bufferevent_enable(bev, event_type);
+//     bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
+	struct sockaddr* saddr = (struct sockaddr*)&sin;
+	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
+        bufferevent_free(bev);
+        return NULL;
+	}
+	event_base_dispatch(b);
+	return bev;
+}
