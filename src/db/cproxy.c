@@ -12,6 +12,8 @@
 #include <unistd.h>
 
 #include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
 #include "libpaxos.h"
 
 
@@ -23,7 +25,7 @@ typedef struct batch_t {
 	int count;
 	char buffer[bsize];
 	size_t buffer_offset;
-	struct event timeout_ev;
+	struct event *timeout_ev;
 } batch;
 
 static batch tx_batch;
@@ -31,7 +33,8 @@ static struct timeval max_batch_time = {0, 1000};
 static cproxy_commit_cb commit_cb;
 
 static int ST;
-static int cert_sock;
+static struct bufferevent *cert_bev;
+static struct event_base *base;
 static int submitted_batch = 0;
 static int batch_timeout = 0;
 static int submitted_tx = 0;
@@ -51,15 +54,18 @@ static void add_to_batch(batch* b, char* v, size_t s);
 static void print_stats();
 
 
-int cproxy_init(const char* paxos_config, struct event_base *base) {
+int cproxy_init(const char* paxos_config, struct event_base *b) {
 	struct learner *l;
 	ST = 0;
-	cert_sock = udp_socket_connect(LeaderIP, LeaderPort);
-	socket_make_non_block(cert_sock);
+// 	cert_sock = udp_socket_connect(LeaderIP, LeaderPort);
+// 	socket_make_non_block(cert_sock);
+	base = b; 
+	cert_bev = ev_buffered_connect(base, LeaderIP, LeaderPort, EV_WRITE);
+	assert(cert_bev != NULL);
 	l = learner_init(paxos_config, on_deliver, NULL, base);
 	assert(l != NULL);
 	init_batch(&tx_batch);
-	evtimer_set(&(tx_batch.timeout_ev), on_batch_timeout, &tx_batch);
+ 	tx_batch.timeout_ev = evtimer_new(base, on_batch_timeout, &tx_batch);
 	return 1;
 }
 
@@ -80,9 +86,12 @@ int cproxy_submit_join(int id, char* address, int port) {
 	j.type = NODE_JOIN;
 	j.node_id = id;
 	j.port = port;
-	strcpy(j.address, address);
+	strncpy(j.address, address, 17);
 	
-	rv = send(cert_sock, &j, sizeof(join_msg), 0);
+	bufferevent_write(cert_bev, &j, sizeof(join_msg));
+	event_base_dispatch(base);
+	
+// 	rv = send(cert_sock, &j, sizeof(join_msg), 0);
 	return rv == 0;
 }
 
@@ -93,7 +102,8 @@ int cproxy_current_st() {
 
 
 void cproxy_cleanup() {
-	close(cert_sock);
+// 	close(cert_sock);
+	bufferevent_free(cert_bev);
 	print_stats();
 }
 
@@ -172,9 +182,6 @@ struct header {
 };
 
 
-//typedef void (* deliver_function)(char*, size_t, iid_t, ballot_t, int, void*);
-// void * is an argument to the del function
-//static void on_deliver(void* value, size_t size) {
 static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	struct header* h = (struct header*)value;
@@ -200,11 +207,10 @@ static void init_batch(batch* b) {
 static void send_batch(batch* b) {
 	int rv;
 
-	rv = send(cert_sock,
-			  b->buffer,
-			  b->buffer_offset,
-			  0);
+// 	rv = send(cert_sock, b->buffer, b->buffer_offset, 0);
 	
+	bufferevent_write(cert_bev, b->buffer, b->buffer_offset);
+	event_base_dispatch(base);
 	if (rv == -1)
 		perror("send_batch");
 	
