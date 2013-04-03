@@ -23,3 +23,8 @@ Debug_uc/
 *.exe
 *.out
 *.app
+
+# KDevelop stuff
+src/.kdev4/
+src/src.kdev4
+
