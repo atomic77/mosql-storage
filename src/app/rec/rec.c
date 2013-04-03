@@ -15,10 +15,12 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
-#include <event2/event_compat.h>
-#include <event2/event.h>
-#include <event2/event_struct.h>
+// #include <event2/event_compat.h>
+// #include <event2/event.h>
+// #include <event2/event_struct.h>
 
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
 
 struct header {
 	short type;
@@ -324,7 +326,7 @@ void sigint(int sig) {
 static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_conf, int port) {
 	char log_path[128], rec_db_path[128];
 
-	struct event request_ev;
+// 	struct event request_ev;
 
 	tapioca_init_defaults();
 	signal(SIGINT, sigint);
@@ -334,14 +336,15 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	// FIXME The rec is not learning properly likely due to the mixture of
 	// compatibility mode libevent and the event2 stuff used by libpaxos; 
 	// need to clean this up
-	event_init();
+// 	event_init();
 	
 	aid = acceptor_id;
 	
+	// Move this to TCP stream based 
 	recv_sock = udp_bind_fd(port);
 	socket_make_non_block(recv_sock);
-	event_set(&request_ev, recv_sock, EV_READ|EV_PERSIST, on_request, NULL);
-	event_add(&request_ev, NULL);
+// 	event_set(&request_ev, recv_sock, EV_READ|EV_PERSIST, on_request, NULL);
+// 	event_add(&request_ev, NULL);
 	
 	send_sock = udp_socket();
 	socket_make_non_block(send_sock);
@@ -360,7 +363,7 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 
 /*	// Reload any keys that happen to be in the BDB log
 	reload_keys();*/
-	event_dispatch();
+// 	event_dispatch();
 
 }
 
