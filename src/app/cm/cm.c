@@ -7,6 +7,7 @@
 #include "socket_util.h"
 #include "util.h"
 
+
 //#include "libpaxos.h"
 //#include "libpaxos_messages.h"
 #include "msg.h"
@@ -45,11 +46,8 @@ static int max_count = 0;
 
 
 static void print_stats();
-// static struct bufferevent*
-// 	proposer_connect(struct event_base* b, address* a) ;
 
 #ifndef MAX_MESSAGE_SIZE
-// This is irrelevant (?) if we are using TCP/UC Paxos
 #define RECV_BSIZE 8 * 1024
 #define MAX_COMMAND_SIZE RECV_BSIZE
 #define MAX_MESSAGE_SIZE RECV_BSIZE
@@ -129,6 +127,7 @@ static void validate_buffer(char* buffer, size_t size) {
 static void handle_join_message(char* buffer, size_t size) {
 	join_msg* m;
 	assert(0 == 0xDEADBEEF);
+	// FIXME Implement me
 
 /*	lp_message_header* paxos_header;
 	submit_cmd_msg* paxos_submit_cmd;
@@ -170,7 +169,6 @@ static void handle_request(char* buffer, size_t size) {
 }
 
 
-// TODO Move this to TCP/libevent from UDP
 static void cm_loop(int fd) {
 	int n;
 	char* b;
@@ -179,6 +177,7 @@ static void cm_loop(int fd) {
 
 	addr_len = sizeof(struct sockaddr_in);
 
+	// TODO Here we need to move to a libevent based listener
 	while (1) {
 		b = malloc(RECV_BSIZE + sizeof(int));
 		n = recvfrom(fd,
