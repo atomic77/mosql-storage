@@ -25,8 +25,10 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-#include <event2/buffer.h>
+#include <event2/listener.h>
+#include <event2/event.h>
 #include <event2/bufferevent.h>
+#include <event2/buffer.h>
 
 static unsigned int max_batch_size = 0;
 static unsigned long long int received_bytes = 0;
@@ -55,7 +57,7 @@ static void print_stats();
 #endif
 
 static struct event_base *base;
-static struct bufferevent *bev;
+static struct bufferevent *acc_bev;
 static struct event *timeout_ev;
 struct config *conf;
 
@@ -71,8 +73,8 @@ static int submit_transaction(tr_submit_msg *t) {
 			 - sizeof(tr_submit_msg);
 	pm.type = submit;
 	LOG(VRB,("Submitting tx of size %d\n", pm.data_size));
-	bufferevent_write(bev, &pm, sizeof(paxos_msg));
-	written = add_validation_state(bev);
+	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
+	written = add_validation_state(acc_bev);
 	assert(written == pm.data_size);
 
 	event_base_dispatch(base);
@@ -154,8 +156,7 @@ struct request {
 	char data[0];
 };
 
-static void handle_request(char* buffer, size_t size) {
-	struct request* req = (struct request*)buffer;
+static void handle_request(struct request *req, char* buffer, size_t size) {
 	switch (req->type) {
 		case TRANSACTION_SUBMIT:
 			validate_buffer(buffer, size);
@@ -169,36 +170,36 @@ static void handle_request(char* buffer, size_t size) {
 }
 
 
-static void cm_loop(int fd) {
-	int n;
-	char* b;
-	socklen_t addr_len;
-	struct sockaddr_in addr;
-
-	addr_len = sizeof(struct sockaddr_in);
-
-	// TODO Here we need to move to a libevent based listener
-	while (1) {
-		b = malloc(RECV_BSIZE + sizeof(int));
-		n = recvfrom(fd,
-					 b,
-					 RECV_BSIZE,
-					 0,
-					 (struct sockaddr*)&addr,
-					 &addr_len);
-
-		if (n == -1) {
-			perror("recvfrom");
-			continue;
-		}
-
-		received_bytes += n;
-		if (n > max_batch_size)
-			max_batch_size = n;
-
-		handle_request(b, n);
-	}
-}
+// static void cm_loop(int fd) {
+// 	int n;
+// 	char* b;
+// 	socklen_t addr_len;
+// 	struct sockaddr_in addr;
+// 
+// 	addr_len = sizeof(struct sockaddr_in);
+// 
+// 	// TODO Here we need to move to a libevent based listener
+// 	while (1) {
+// 		b = malloc(RECV_BSIZE + sizeof(int));
+// 		n = recvfrom(fd,
+// 					 b,
+// 					 RECV_BSIZE,
+// 					 0,
+// 					 (struct sockaddr*)&addr,
+// 					 &addr_len);
+// 
+// 		if (n == -1) {
+// 			perror("recvfrom");
+// 			continue;
+// 		}
+// 
+// 		received_bytes += n;
+// 		if (n > max_batch_size)
+// 			max_batch_size = n;
+// 
+// 		handle_request(b, n);
+// 	}
+// }
 
 static void signal_int(int sig) {
 	print_stats();
@@ -216,7 +217,86 @@ static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
 
     }
 }
+static void
+on_read(struct bufferevent* bev, void* arg)
+{
+	size_t len;
+	paxos_msg msg;
+	char *buf;
+	struct evbuffer* b;
+	struct request req;
+	
+	b = bufferevent_get_input(bev);
+	
+	evbuffer_remove(b, &req, sizeof(struct request));
+	len = evbuffer_get_length(b);
+	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
+	buf = malloc(len);
+	evbuffer_remove(b, buf, len); 
+	evbuffer_free(b);
+	
+	handle_request(&req, buf, len);
+	
+	free(buf);
+}
 
+
+static void
+on_bev_error(struct bufferevent *bev, short events, void *arg)
+{
+	if (events & BEV_EVENT_ERROR)
+		perror("Error from bufferevent");
+	if (events & (BEV_EVENT_EOF|BEV_EVENT_ERROR))
+		bufferevent_free(bev);
+}
+
+static void
+on_connect(struct evconnlistener *l, evutil_socket_t fd,
+	struct sockaddr *addr, int socklen, void *arg)
+{
+	struct tcp_receiver* r = arg;
+	struct event_base* b = evconnlistener_get_base(l);
+	struct bufferevent *bev = bufferevent_socket_new(b, fd, 
+		BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_setcb(bev, on_read, NULL, on_bev_error, arg);
+	bufferevent_enable(bev, EV_READ);
+// 	carray_push_back(r->bevs, bev);
+	LOG(VRB, ("accepted connection from...\n"));
+}
+
+static void
+on_listener_error(struct evconnlistener* l, void* arg)
+{
+	struct event_base *base = evconnlistener_get_base(l);
+	int err = EVUTIL_SOCKET_ERROR();
+	fprintf(stderr, "Got an error %d (%s) on the listener. "
+		"Shutting down.\n", err, evutil_socket_error_to_string(err));
+
+	event_base_loopexit(base, NULL);
+}
+
+struct evconnlistener *
+bind_new_listener(struct event_base* b, address* a,
+ 	evconnlistener_cb conn_cb, evconnlistener_errorcb err_cb)
+{
+	struct evconnlistener *el;
+	struct sockaddr_in sin;
+	unsigned flags = LEV_OPT_CLOSE_ON_EXEC
+		| LEV_OPT_CLOSE_ON_FREE
+		| LEV_OPT_REUSEABLE;
+	
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(a->address_string);
+	sin.sin_port = htons(a->port);
+	el = evconnlistener_new_bind(
+		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
+	assert(el != NULL);
+	evconnlistener_set_error_cb(el, err_cb);
+// 	r->bevs = carray_new(10);
+	
+	return el;
+}
 
 static void init(const char* tapioca_config, const char* paxos_config) {
 	int cm_fd, result;
@@ -231,17 +311,25 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	conf = read_config(paxos_config);
 	base = event_base_new();
 
+	/* Set up connection to proposer */
 	address p = conf->proposers[0];
-	bev = ev_buffered_connect(base, p.address_string, p.port, EV_WRITE);
-	assert(bev != NULL);
-	bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
+	acc_bev = ev_buffered_connect(base, p.address_string, p.port, EV_WRITE);
+	assert(acc_bev != NULL);
+	bufferevent_setcb(acc_bev, NULL, NULL, on_socket_event, NULL);
 	
 	bytes_left = MAX_COMMAND_SIZE;
 	
-	cm_fd = udp_bind_fd(LeaderPort);
+	/* Setup local listener */
+	address a;
+	a.address_string = LeaderIP;
+	a.port = LeaderPort;
+	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
+// 	cm_fd = udp_bind_fd(LeaderPort);
 	gettimeofday(&timeout_tv, NULL);
 	
-	cm_loop(cm_fd);
+// 	cm_loop(cm_fd);
+	
+	event_base_dispatch(base);
 }
 
 

@@ -151,9 +151,10 @@ ev_buffered_connect(struct event_base* b, const char *address_string, int port,
 //     bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
 	struct sockaddr* saddr = (struct sockaddr*)&sin;
 	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
+		perror("ev_buffered_connect");
         bufferevent_free(bev);
         return NULL;
 	}
-	event_base_dispatch(b);
+	//event_base_dispatch(b);
 	return bev;
 }
