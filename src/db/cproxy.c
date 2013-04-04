@@ -10,6 +10,7 @@
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -45,7 +46,7 @@ static int commit_count = 0;
 
 
 static void on_init();
-static void on_deliver(void* value, size_t size, iid_t iid,
+static void on_deliver(char* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) ;
 static void on_batch_timeout(int fd, short event, void* arg);
 static void init_batch(batch* b);
@@ -53,6 +54,38 @@ static void send_batch(batch* b);
 static void add_to_batch(batch* b, char* v, size_t s);
 static void print_stats();
 
+static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
+    if (ev & BEV_EVENT_CONNECTED) {
+        fprintf(stdout, "cproxy bufferevent connected\n");
+    } else if (ev & BEV_EVENT_ERROR) {
+        int err = EVUTIL_SOCKET_ERROR();
+        fprintf(stderr, "cproxy: error %d (%s)\n",
+            err, evutil_socket_error_to_string(err));
+    }
+}
+
+static struct bufferevent* cm_connect(struct event_base* b, 
+									const char *address, int port) {
+	struct sockaddr_in sin;
+	struct bufferevent* bev;
+	
+	LOG(VRB,("Connecting to proposer %s : %d\n", address, port));
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(address);
+	sin.sin_port = htons(port);
+	
+	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_enable(bev, EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
+	struct sockaddr* saddr = (struct sockaddr*)&sin;
+	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
+		bufferevent_free(bev);
+		return NULL;
+	}
+	//event_base_dispatch(b);
+	return bev;
+}
 
 int cproxy_init(const char* paxos_config, struct event_base *b) {
 	struct learner *l;
@@ -60,12 +93,13 @@ int cproxy_init(const char* paxos_config, struct event_base *b) {
 // 	cert_sock = udp_socket_connect(LeaderIP, LeaderPort);
 // 	socket_make_non_block(cert_sock);
 	base = b; 
-	cert_bev = ev_buffered_connect(base, LeaderIP, LeaderPort, EV_WRITE);
+	cert_bev = cm_connect(base, LeaderIP, LeaderPort);
 	assert(cert_bev != NULL);
 	l = learner_init(paxos_config, on_deliver, NULL, base);
 	assert(l != NULL);
 	init_batch(&tx_batch);
  	tx_batch.timeout_ev = evtimer_new(base, on_batch_timeout, &tx_batch);
+	assert(tx_batch.timeout_ev != NULL);
 	return 1;
 }
 
@@ -182,7 +216,7 @@ struct header {
 };
 
 
-static void on_deliver(void* value, size_t size, iid_t iid,
+static void on_deliver(char* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	struct header* h = (struct header*)value;
 	switch (h->type) {
@@ -190,7 +224,7 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 			handle_transaction(value, size);
 			break;
 		case NODE_JOIN:
-			handle_join_message(value);
+			handle_join_message((join_msg *)value);
 			break;
 		default:
 			printf("handle_request: dropping message of unkown type\n");
@@ -210,7 +244,7 @@ static void send_batch(batch* b) {
 // 	rv = send(cert_sock, b->buffer, b->buffer_offset, 0);
 	
 	bufferevent_write(cert_bev, b->buffer, b->buffer_offset);
-	event_base_dispatch(base);
+	//event_base_dispatch(base);
 	if (rv == -1)
 		perror("send_batch");
 	
@@ -218,7 +252,7 @@ static void send_batch(batch* b) {
 	submitted_tx += b->count;
 
 	init_batch(b);
-	evtimer_del(&b->timeout_ev);
+	evtimer_del(b->timeout_ev);
 }
 
 
@@ -237,7 +271,8 @@ static void add_to_batch(batch* b, char* v, size_t s) {
 	b->buffer_offset += s;
 	
 	if (b->count == 1) {
-		evtimer_add(&b->timeout_ev, &max_batch_time);
+		assert(b->timeout_ev != NULL);
+		evtimer_add(b->timeout_ev, &max_batch_time);
 	}
 }
 
