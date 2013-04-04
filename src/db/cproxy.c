@@ -123,7 +123,6 @@ int cproxy_submit_join(int id, char* address, int port) {
 	strncpy(j.address, address, 17);
 	
 	bufferevent_write(cert_bev, &j, sizeof(join_msg));
-	event_base_dispatch(base);
 	
 // 	rv = send(cert_sock, &j, sizeof(join_msg), 0);
 	return rv == 0;
