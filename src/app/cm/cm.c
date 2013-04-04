@@ -76,8 +76,6 @@ static int submit_transaction(tr_submit_msg *t) {
 	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
 	written = add_validation_state(acc_bev);
 	assert(written == pm.data_size);
-
-	event_base_dispatch(base);
 }
 
 static int transaction_fits_in_buffer(tr_submit_msg* m) {
@@ -116,7 +114,7 @@ static void validate_buffer(char* buffer, size_t size) {
 		count++;
 		t = (tr_submit_msg*)&buffer[idx];
 		idx += TR_SUBMIT_MSG_SIZE(t);
-		validate(t);
+		validate(t); 
 	}
 	
 	if (count > max_count)
@@ -224,20 +222,23 @@ on_read(struct bufferevent* bev, void* arg)
 	paxos_msg msg;
 	char *buf;
 	struct evbuffer* b;
-	struct request req;
+	struct request *req;
 	
 	b = bufferevent_get_input(bev);
 	
-	evbuffer_remove(b, &req, sizeof(struct request));
 	len = evbuffer_get_length(b);
 	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
 	buf = malloc(len);
+
 	evbuffer_remove(b, buf, len); 
-	evbuffer_free(b);
+
+	// The header of the submit_msg is basically a struct request anyway
+	req = (struct request *) buf; 
 	
-	handle_request(&req, buf, len);
+	// As we do no batching all requests are of size 1 now
+	handle_request(req, buf, 1);
 	
-	free(buf);
+	//free(buf); // done in the caller
 }
 
 
@@ -318,7 +319,7 @@ proposer_connect(struct event_base* b, address* a) {
 		bufferevent_free(bev);
 		return NULL;
 	}
-	event_base_dispatch(b);
+
 	return bev;
 }
 
