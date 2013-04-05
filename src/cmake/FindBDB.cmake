@@ -8,7 +8,7 @@
 set(BDB_ROOT "" CACHE STRING "BerkeleyDB root directory")
 
 find_path(BDB_INCLUDE_DIR db.h HINTS "${BDB_ROOT}/include")
-find_library(BDB_LIBRARY libdb.a libdb-4.8.a db HINTS "${BDB_ROOT}/lib")
+find_library(BDB_LIBRARY libdb.a db HINTS "${BDB_ROOT}/lib")
 
 set(BDB_LIBRARIES ${BDB_LIBRARY})
 set(BDB_INCLUDE_DIRS ${BDB_INCLUDE_DIR})
