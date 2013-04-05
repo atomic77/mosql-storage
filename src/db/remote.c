@@ -78,14 +78,12 @@ on_rec_read(struct bufferevent* bev, void* arg) {
 	socklen_t addr_len;
 	remote_message* rm;
 	struct evbuffer *b;
-	char *buf;
 	
 	b = bufferevent_get_input(bev);
 	len = evbuffer_get_length(b);
-	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
-	buf = malloc(len);
+	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
 
-	evbuffer_remove(b, buf, len); 
+	evbuffer_remove(b, recv_buffer, len); 
 
 	rm = (remote_message*)recv_buffer;
 	// FIXME We are getting the vrong message type here on recovery
@@ -144,13 +142,14 @@ int remote_init(struct config *lp_config, struct event_base *base) {
 	
 	// Connect to each rec (one per acceptor). For now assume rec is on
 	// acceptor port + 100
-	acc_bevs = malloc(lp_config->acceptors_count * sizeof(struct bufferevent *));
-	for (i=0; i<lp_config->acceptors_count; i++) {
+	num_recs = 1; // lp_config->acceptors_count; connect to first one only
+	last_rec = 0;
+	
+	acc_bevs = malloc(num_recs * sizeof(struct bufferevent *));
+	for (i=0; i<num_recs; i++) {
 		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
 			lp_config->acceptors[i].port+100);
 	}
-	num_recs = lp_config->acceptors_count;
-	last_rec = 0;
 	
 	requests = create_hashtable(512, hash_from_key, key_equal, NULL);
 	request_count = 0;
@@ -294,7 +293,8 @@ static int send_rec_key_msg(key* k, rec_key_msg* msg) {
 	struct peer* p;
 	struct bufferevent *bev;
 	
-	last_rec = (last_rec + 1) % num_recs;
+	//last_rec = (last_rec + 1) % num_recs;
+	last_rec = 0; // always use the first one
 	
 //	socket_set_address(&addr, peer_address(p), peer_port(p));
 //	
