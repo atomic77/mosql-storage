@@ -351,9 +351,11 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	assert(l != NULL);
 	
 	// Create new listener for recovery requests
+	struct config* conf = read_config(paxos_conf);
 	address a;
 	a.address_string = "0.0.0.0";
-	a.port = port;
+	// For now define a rec as listening on acceptor port + 100
+	a.port = conf->acceptors[acceptor_id].port+100;
 	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
 
 	// Open acceptor logs

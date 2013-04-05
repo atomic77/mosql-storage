@@ -2,8 +2,10 @@
 #define _SM_H_
 
 #include "dsmDB_priv.h"
+#include <event2/bufferevent.h>
+#include <libpaxos/config_reader.h>
 
-int sm_init();
+int sm_init(struct config *lp_config, struct event_base *base);
 
 int sm_cleanup();
 

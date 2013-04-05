@@ -381,6 +381,7 @@ void print_stats() {
 	}
 	
 	if (aborted_tx > 0) {
+
 		percent_conflict = (((float)write_conflict_counter()) / aborted_tx) * 100;
    	 	percent_prevws_conflict = (((float)write_conflict_prevws_counter()) / aborted_tx) * 100;
 		too_old = (((float) too_old_counter()) / aborted_tx) * 100;
