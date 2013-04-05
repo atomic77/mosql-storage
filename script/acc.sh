@@ -32,9 +32,9 @@ $PAXOS_DIR/bin/example_proposer 0 config/paxos_config.cfg &
 
 echo "Launching rec nodes"
 
-for i in 2 1 0; do
-	bin/rec $i config/paxos_config.cfg config/1.cfg &
-done
+#for i in 2 1 0; do
+	bin/rec 0 config/paxos_config.cfg config/1.cfg &
+#done
 
 wait
 
