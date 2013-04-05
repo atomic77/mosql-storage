@@ -10,15 +10,14 @@
 #include "peer.h"
 #include "hash.h"
 #include "tapiocadb.h"
+#include "carray.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
-// #include <event2/event_compat.h>
-// #include <event2/event.h>
-// #include <event2/event_struct.h>
-
+#include <event2/listener.h>
+#include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
@@ -31,11 +30,12 @@ struct header {
 #define VERBOSE 0
 #define buffer_size MAX_TRANSACTION_SIZE
 
-static void handle_rec_key();
+static void handle_rec_key(char* buffer, int size, bufferevent *bev) ;
 
-typedef void (*handler)(char*, int);
-static handler handle[] = 
-	{ handle_rec_key };
+// The rec only responds to one type of message so this is unnecessary atm
+//typedef void (*handler)(char*, int);
+//static handler handle[] = 
+//	{ handle_rec_key };
 
 static rlog *rl;
 static struct storage *ssm = NULL;
@@ -45,6 +45,7 @@ static int send_sock;
 static char recv_buffer[buffer_size];
 static char send_buffer[buffer_size];
 static struct event_base *base;
+static struct carray* bevs;
 
 static iid_t Iid = 0;
 static int rec_key_count = 0;
@@ -77,51 +78,6 @@ static void index_entry_print(key* k, off_t off) {
 	printf("   IID: %lld\n", off);
 }
 
-
-void send_rec_key_reply(int id, rec_key_reply* rep) {
-	int size;
-	struct peer* p;
-	struct sockaddr_in addr;
-	
-	p = peer_get(id);
-	if (p == NULL) {
-		printf("Peer %d not found. dropping request\n", id);
-		return;
-	}
-	socket_set_address(&addr, peer_address(p), peer_port(p));
-	size = rep->size + sizeof(rec_key_reply);
-	
-	sendto(send_sock,
-			rep,
-			size, 
-			0,
-			(struct sockaddr*)&addr, 
-			sizeof(addr));
-}
-
-
-/*
-static void prepare_reply_data(key* k, paxos_msg* rec, rec_key_reply* reply) {
-	int i, offset;
-	flat_key_val* kv;
-	tr_deliver_msg* dmsg;
-	
-	dmsg = (tr_deliver_msg*)rec->cmd_value;
-	offset = (dmsg->aborted_count + dmsg->committed_count) * sizeof(tr_id);
-	
-	for (i = 0; i < dmsg->updateset_count; i++) {
-    	kv = (flat_key_val*)&dmsg->data[offset];
-		if ((kv->ksize == k->size) && (memcmp(kv->data, k->data, k->size) == 0)) {
-			reply->size = kv->vsize;
-			reply->version = dmsg->ST;
-			memcpy(reply->data, &kv->data[kv->ksize], kv->vsize);
-		}
-    	offset += FLAT_KEY_VAL_SIZE(kv);
-	}
-}
-*/
-
-
 static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* reply) {
 	int i, offset;
 	flat_key_val* kv;
@@ -142,7 +98,7 @@ static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* repl
 }
 
 
-static void handle_rec_key(char* buffer, int size) {
+static void handle_rec_key(char* buffer, int size, bufferevent *bev) {
 	key k;
 	iid_t iid;
 //	paxos_msg* rec;
@@ -202,7 +158,7 @@ static void handle_rec_key(char* buffer, int size) {
 		rep->size = 0;
 	}
 	
-	send_rec_key_reply(rm->node_id, rep);
+	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
 }
 
 
@@ -322,6 +278,87 @@ void sigint(int sig) {
 	exit(0);
 }
 
+// TODO There is a lot of duplicated libevent code here from the certifier
+static void
+on_rec_request(struct bufferevent* bev, void* arg)
+{
+	size_t len;
+	char *buf;
+	struct evbuffer* b;
+	
+	b = bufferevent_get_input(bev);
+	
+	len = evbuffer_get_length(b);
+	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
+	buf = malloc(len);
+
+	evbuffer_remove(b, buf, len); 
+
+	// We expect the "type" to be in the first 4 bytes
+	int32_t *msg_type = ((int*)recv_buffer);
+	assert(*msg_type == 0); // The rec shouldn't receive any other messages right now
+	
+	handle_rec_key(buf, len);
+	free(buf);
+}
+
+
+static void
+on_bev_error(struct bufferevent *bev, short events, void *arg)
+{
+	if (events & BEV_EVENT_ERROR)
+		perror("Error from bufferevent");
+	if (events & (BEV_EVENT_EOF|BEV_EVENT_ERROR))
+		bufferevent_free(bev);
+}
+
+static void
+on_connect(struct evconnlistener *l, evutil_socket_t fd,
+	struct sockaddr *addr, int socklen, void *arg)
+{
+	struct event_base* b = evconnlistener_get_base(l);
+	struct bufferevent *bev = bufferevent_socket_new(b, fd, 
+		BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_setcb(bev, on_rec_request, NULL, on_bev_error, arg);
+	bufferevent_enable(bev, EV_READ);
+ 	carray_push_back(bevs, bev);
+	LOG(VRB, ("accepted connection from...\n"));
+}
+
+static void
+on_listener_error(struct evconnlistener* l, void* arg)
+{
+	struct event_base *base = evconnlistener_get_base(l);
+	int err = EVUTIL_SOCKET_ERROR();
+	fprintf(stderr, "Got an error %d (%s) on the listener. "
+		"Shutting down.\n", err, evutil_socket_error_to_string(err));
+
+	event_base_loopexit(base, NULL);
+}
+
+struct evconnlistener *
+bind_new_listener(struct event_base* b, address* a,
+ 	evconnlistener_cb conn_cb, evconnlistener_errorcb err_cb)
+{
+	struct evconnlistener *el;
+	struct sockaddr_in sin;
+	unsigned flags = LEV_OPT_CLOSE_ON_EXEC
+		| LEV_OPT_CLOSE_ON_FREE
+		| LEV_OPT_REUSEABLE;
+	
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(a->address_string);
+	sin.sin_port = htons(a->port);
+	el = evconnlistener_new_bind(
+		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
+	assert(el != NULL);
+	evconnlistener_set_error_cb(el, err_cb);
+ 	bevs = carray_new(10);
+	
+	return el;
+}
+
 
 static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_conf, int port) {
 	char log_path[128], rec_db_path[128];
@@ -332,27 +369,19 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	signal(SIGINT, sigint);
 	load_config_file(tapioca_conf);
 	
-	
-	// FIXME The rec is not learning properly likely due to the mixture of
-	// compatibility mode libevent and the event2 stuff used by libpaxos; 
-	// need to clean this up
-// 	event_init();
-	
 	aid = acceptor_id;
-	
-	// Move this to TCP stream based 
-	recv_sock = udp_bind_fd(port);
-	socket_make_non_block(recv_sock);
-// 	event_set(&request_ev, recv_sock, EV_READ|EV_PERSIST, on_request, NULL);
-// 	event_add(&request_ev, NULL);
-	
-	send_sock = udp_socket();
-	socket_make_non_block(send_sock);
 	base = event_base_new();
-
+	
+	// Start learner
 	struct learner *l = learner_init(paxos_conf, on_deliver, NULL, base);
 	assert(l != NULL);
 	
+	// Create new listener for recovery requests
+	address a;
+	a.address_string = "0.0.0.0";
+	a.port = port;
+	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
+
 	// Open acceptor logs
     ssm = storage_open(acceptor_id, 0);
     assert(ssm != NULL);
@@ -360,6 +389,8 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);
 	rl = rlog_init(rec_db_path);
 	assert(rl != NULL);
+	
+	event_base_dispatch(base);
 
 /*	// Reload any keys that happen to be in the BDB log
 	reload_keys();*/

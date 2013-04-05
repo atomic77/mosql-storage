@@ -255,13 +255,11 @@ static void
 on_connect(struct evconnlistener *l, evutil_socket_t fd,
 	struct sockaddr *addr, int socklen, void *arg)
 {
-	struct tcp_receiver* r = arg;
 	struct event_base* b = evconnlistener_get_base(l);
 	struct bufferevent *bev = bufferevent_socket_new(b, fd, 
 		BEV_OPT_CLOSE_ON_FREE);
 	bufferevent_setcb(bev, on_read, NULL, on_bev_error, arg);
 	bufferevent_enable(bev, EV_READ);
-// 	carray_push_back(r->bevs, bev);
 	LOG(VRB, ("accepted connection from...\n"));
 }
 
@@ -294,7 +292,6 @@ bind_new_listener(struct event_base* b, address* a,
 		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
 	assert(el != NULL);
 	evconnlistener_set_error_cb(el, err_cb);
-// 	r->bevs = carray_new(10);
 	
 	return el;
 }
