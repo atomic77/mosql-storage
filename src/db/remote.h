@@ -2,12 +2,13 @@
 #define _REMOTE_H_
 
 #include "dsmDB_priv.h"
+#include <libpaxos/config_reader.h>
 
 
 typedef void(*sm_get_cb)(key*, val*, void*);
 
 
-int remote_init();
+int remote_init(struct config *lp_config, struct event_base *base);
 
 int remote_cleanup();
 

@@ -19,10 +19,10 @@ static void print_stats();
 static void gc(int fd, short event, void* arg);
 
 
-int sm_init() {
+int sm_init(struct config *lp_config, struct event_base *base) {
 	int rv;
 	
-	rv = remote_init();
+	rv = remote_init(lp_config, base);
 	assert(rv >= 0);
 	
 	rv = storage_init();
