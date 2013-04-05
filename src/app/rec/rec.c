@@ -136,7 +136,7 @@ static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 		index_entry_print(&k, iid);
 		accept_ack *ar = storage_get_record(ssm, iid);
 		if (ar == NULL) {
-			fprintf(stderr, "Paxos log read error on iid %d \n", iid);
+			LOG(VRB, ("Paxos log read error on iid %d \n", iid));
 			assert(1337 == 0xDEADBEEF);
 			return;
 		}
@@ -212,7 +212,7 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	Iid++; // Update global instance id
 	
-	printf("Rec learned value size %d\n", size); 
+	LOG(VRB, ("Rec learned value size %d\n", size)); 
 	struct header* h = (struct header*)value;
 	switch (h->type) {
 		case TRANSACTION_SUBMIT:
@@ -240,7 +240,7 @@ void reload_keys() {
 		n++;
 		if(iid == -1) break;
 	}
-	printf("PLOG: Loaded %d keys from BDB\n", n);
+	LOG(VRB, ("PLOG: Loaded %d keys from BDB\n", n));
 }
 
 void sigint(int sig) {
@@ -257,23 +257,20 @@ static void
 on_rec_request(struct bufferevent* bev, void* arg)
 {
 	size_t len;
-	char *buf;
 	struct evbuffer* b;
 	
 	b = bufferevent_get_input(bev);
 	
 	len = evbuffer_get_length(b);
-	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
-	buf = malloc(len);
+	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
 
-	evbuffer_remove(b, buf, len); 
+	evbuffer_remove(b, recv_buffer, len); 
 
 	// We expect the "type" to be in the first 4 bytes
 	int32_t *msg_type = ((int*)recv_buffer);
 	assert(*msg_type == 0); // The rec shouldn't receive any other messages right now
 	
-	handle_rec_key(buf, len, bev);
-	free(buf);
+	handle_rec_key(recv_buffer, len, bev);
 }
 
 
