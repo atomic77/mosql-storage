@@ -16,6 +16,7 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <errno.h>
 #include <event2/listener.h>
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -30,7 +31,7 @@ struct header {
 #define VERBOSE 0
 #define buffer_size MAX_TRANSACTION_SIZE
 
-static void handle_rec_key(char* buffer, int size, bufferevent *bev) ;
+static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) ;
 
 // The rec only responds to one type of message so this is unnecessary atm
 //typedef void (*handler)(char*, int);
@@ -98,7 +99,7 @@ static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* repl
 }
 
 
-static void handle_rec_key(char* buffer, int size, bufferevent *bev) {
+static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 	key k;
 	iid_t iid;
 //	paxos_msg* rec;
@@ -224,33 +225,6 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 }
 
 
-static void on_request(int fd, short ev, void* arg) {
-	int n;
-	int* type;
-	socklen_t addr_len;
-	struct sockaddr_in addr;
-	
-	addr_len = sizeof(struct sockaddr_in);
-	memset(&addr, '\0', addr_len);
-	
-	n = recvfrom(recv_sock,
-				 recv_buffer,
-				 buffer_size,
-				 0,
-				 (struct sockaddr*)&addr,
-				 &addr_len);
-	assert(n != -1);
-	
-	// We expect the "type" to be in the first 4 bytes
-	type = ((int*)recv_buffer);
-	if (*type >= (sizeof(handle) / sizeof(handler)) || *type < 0) {
-		printf("Error: ignoring message of type %d\n", *type);
-		return;
-	}
-	
-	handle[*type](recv_buffer, n);
-}
-
 // TODO Deprecated now that BDB working correctly; may need some variation of
 // this logic for recovery however
 void reload_keys() {
@@ -298,7 +272,7 @@ on_rec_request(struct bufferevent* bev, void* arg)
 	int32_t *msg_type = ((int*)recv_buffer);
 	assert(*msg_type == 0); // The rec shouldn't receive any other messages right now
 	
-	handle_rec_key(buf, len);
+	handle_rec_key(buf, len, bev);
 	free(buf);
 }
 
