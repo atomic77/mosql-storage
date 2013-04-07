@@ -1,5 +1,5 @@
 #include "dsmDB_priv.h"
-#include "storage.h"
+#include <libpaxos/storage.h>
 #include <libpaxos.h>
 #include <libpaxos/libpaxos_messages.h>
 #include <libpaxos/config_reader.h>
@@ -132,7 +132,7 @@ static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 	k.size = rm->ksize;
 	k.data = rm->data;
 	iid = rlog_read(rl, &k);
-	if (iid != -1) {
+	if (iid > 0) {
 		index_entry_print(&k, iid);
 		accept_ack *ar = storage_get_record(ssm, iid);
 		if (ar == NULL) {

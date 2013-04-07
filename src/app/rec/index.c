@@ -143,7 +143,7 @@ iid_t rlog_read(rlog *r, key* k) {
 
 	rv = r->dbp->get(r->dbp, NULL, &_k, &_v, 0);
 
-	if (rv == DB_NOTFOUND) return -1;
+	if (rv == DB_NOTFOUND) return 0;
 	if (rv != 0)
 	{
     	r->dbp->err(r->dbp, rv, " get failed on db with error");
@@ -152,8 +152,6 @@ iid_t rlog_read(rlog *r, key* k) {
 	assert(_v.size == sizeof(iid_t));
 	assert(_v.data != NULL);
 	inst = *(iid_t *)_v.data;
-	// For some reason we are double-freeing here; comment for now
-	// free(_v.data);
 
 	return inst;
 }
