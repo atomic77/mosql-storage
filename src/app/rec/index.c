@@ -50,6 +50,8 @@ rlog * rlog_init(const char *path) {
       DB_INIT_TXN   |  /* Initialize the transactional subsystem. This
 			* also turns on logging. */
       DB_INIT_MPOOL |  /* Initialize the memory pool (in-memory cache) */
+      DB_REGISTER	|
+     // DB_THREAD	|
 //      DB_AUTO_COMMIT |
       DB_TXN_NOSYNC ;
 //      DB_THREAD;       /* Cause the environment to be free-threaded */

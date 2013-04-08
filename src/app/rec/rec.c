@@ -134,13 +134,18 @@ static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 	iid = rlog_read(rl, &k);
 	if (iid > 0) {
 		index_entry_print(&k, iid);
+		storage_tx_begin(ssm);
 		accept_ack *ar = storage_get_record(ssm, iid);
+		storage_tx_commit(ssm);
 		if (ar == NULL) {
 			LOG(VRB, ("Paxos log read error on iid %d \n", iid));
 			assert(1337 == 0xDEADBEEF);
 			return;
 		}
-		assert(ar->value_size > 0);
+		if(ar->value_size == 0) {
+			printf("acc. record is final %d iid %d ballot %d\n" , ar->is_final, ar->iid, ar->ballot);
+			assert(11337 == 0xDBCAFE);
+		}
 		dmsg = (tr_deliver_msg *)ar->value;
 /*		rec = (accept_ack *) malloc(ACCEPT_ACK_SIZE(ar) + sizeof(paxos_msg));
 		rec-> = ir->inst_number;
@@ -152,7 +157,7 @@ static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 		rep->type = REC_KEY_REPLY;
 		rep->req_id = rm->req_id;
 		prepare_reply_data(&k,dmsg,rep);
-		free(ar);
+		//free(ar);
 	} else {
 		rep->type = REC_KEY_REPLY;
 		rep->req_id = rm->req_id;
@@ -356,7 +361,7 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
 
 	// Open acceptor logs
-    ssm = storage_open(acceptor_id, 0);
+    ssm = storage_open(acceptor_id, 1);
     assert(ssm != NULL);
 
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);
