@@ -1,10 +1,5 @@
 #!/bin/bash
 
-if [ ! -e config/1.cfg ]; then
-  echo "Please run this script from the root install folder"
-  exit 1
-fi
-
 killall -q -INT cm tapioca
 sleep 0.5
 killall -q -9 cm tapioca

@@ -44,3 +44,31 @@ function do_killall () {
 	echo "$cmd"
 	$cmd > /dev/null
 }
+
+# New launchers
+
+launch_acceptors() {
+	for i in 2 1 0; do
+		$PAXOS_DIR/bin/example_acceptor $i config/paxos_config.cfg &
+		sleep 0.4
+	done
+}
+
+launch_proposers() {
+	$PAXOS_DIR/bin/example_proposer 0 config/paxos_config.cfg &
+}
+
+launch_rec_nodes () {
+	echo "Launching rec nodes"
+	#for i in 2 1 0; do
+		bin/rec 0 config/paxos_config.cfg config/1.cfg &
+	#done
+}
+
+launch_cm() {
+	bin/cm config/1.cfg config/paxos_config.cfg &    
+}
+
+launch_nodes() {
+	bin/tapioca 0 config/1.cfg config/paxos_config.cfg 5555 &
+}
