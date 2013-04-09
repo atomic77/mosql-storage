@@ -6,9 +6,11 @@ CLEARDB="n"
 PAXOS_DIR=/home/atomic/local/libpaxos
 KILL="n"
 NOREC="n"
+NOPROP="n"
+DELAY=2
 
-SHORTOPTS="hckrp:"
-LONGOPTS="help,clear-db,kill-all,no-rec,paxos-dir:"
+SHORTOPTS="hckrp:d:o"
+LONGOPTS="help,clear-db,kill-all,no-rec,paxos-dir:delay:,no-proposer"
 
 usage() {
 	echo "$0"
@@ -42,16 +44,21 @@ while true; do
          exit 0
          ;;
       -c|--clear-db) 
-		#shift
 		CLEARDB="y"
 		;;
+      -o|--no-proposer) 
+		NOPROP="y"
+		;;
       -r|--no-rec) 
-		#shift
 		NOREC="y"
 		;;
       -k|--kill-all) 
-		#shift
 		KILL="y"
+		;;
+      -d|--delay) 
+		shift
+		echo "Setting delay to $1"
+		DELAY=$1
 		;;
       -p|--paxos) 
 		shift
@@ -73,7 +80,7 @@ check_env
 
 echo "SIGINT'ing all procs"
 killall -q -INT cm tapioca example_acceptor example_proposer rec
-sleep 2
+sleep $DELAY
 
 if [ "$KILL" = "y" ]; then
 	echo "SIGKILL'ing all procs... they had two seconds."
@@ -88,15 +95,18 @@ fi
 
 
 launch_acceptors
-launch_proposers
 
-sleep 2
+sleep $DELAY
 
 if [ "$NOREC" = "n" ]; then
 	launch_rec_nodes
 fi
 
-sleep 2
+if [ "$NOPROP" = "n" ]; then
+	launch_proposers
+fi
+
+sleep $DELAY
 
 launch_cm
 launch_nodes
