@@ -13,9 +13,19 @@ SHORTOPTS="hckrp:d:o"
 LONGOPTS="help,clear-db,kill-all,no-rec,paxos-dir:delay:,no-proposer"
 
 usage() {
-	echo "$0"
-	echo "Long Opts: $LONGOPTS" 
-	echo "Short Opts: $SHORTOPTS "
+	echo "$0 <Options>"
+	echo
+	echo "-c, --clear-db"
+	echo "	Remove all acceptor logs on restart"
+	echo
+	echo "-k, --kill-all"
+	echo "	SIGKILL all mosql-storage/se/libpaxos processes before starting"
+	echo
+	echo "-r, --no-rec"
+	echo "	Don't launch recovery nodes (useful in some testing scenarios)"
+	echo
+	echo "-p, --paxos-dir <dir>"
+	echo "	Base installation directory of libpaxos"
 	exit 1
 }
 
