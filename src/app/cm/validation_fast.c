@@ -61,7 +61,7 @@ void init_validation() {
     vs.abort_tr_ids = DB_MALLOC(sizeof(tr_id) * MAX_ABORT_COUNT);
     vs.commit_tr_ids = DB_MALLOC(sizeof(tr_id) * ValidationBufferSize);
     us_buffer = DB_MALLOC(sizeof(buffer));
-    us_buffer->data = DB_MALLOC(64*1024);
+    us_buffer->data = DB_MALLOC(1024*1024);
     buffer_clear(us_buffer);
 }
 
@@ -248,7 +248,7 @@ int validate_phase2(tr_submit_msg* t, int commit) {
 
 
 // Write out validation_state/tr_deliver_msg; returns the number of bytes written
-int add_validation_state(struct bufferevent *bev) {
+int add_validation_state(struct evbuffer *b) {
 	int size, written;
 	
 	written = 0;
@@ -257,21 +257,21 @@ int add_validation_state(struct bufferevent *bev) {
 	
     // Top 5 elements of validation state are in common with tr_deliver_msg
 	size = 5 * sizeof(int);
-	bufferevent_write(bev, &vs, size);
+	evbuffer_add(b, &vs, size);
 	written += size;
 	
 	// add abort tr_ids
 	size = vs.abort_count * sizeof(tr_id);
-	bufferevent_write(bev, vs.abort_tr_ids, size);
+	evbuffer_add(b, vs.abort_tr_ids, size);
 	written += size;
 	
 	// add commit tr_ids
 	size = vs.commit_count * sizeof(tr_id);
-	bufferevent_write(bev, vs.commit_tr_ids, size);
+	evbuffer_add(b, vs.commit_tr_ids, size);
 	written += size;
 	
 	// add update set buffer
-	bufferevent_write(bev, us_buffer->data, us_buffer->offset);
+	evbuffer_add(b, us_buffer->data, us_buffer->offset);
 	written += us_buffer->offset;
 	return written;
 }
