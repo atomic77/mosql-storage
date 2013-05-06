@@ -10,17 +10,22 @@ protected:
     tapioca_handle* th;
     
 	virtual void SetUp() {
-		system("cd ..; ./start.sh > /dev/null; cd unit");
+		//system("cd ..; ./start.sh > /dev/null; cd unit");
+		system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/null; cd -");
+		sleep(1);
         th = tapioca_open("127.0.0.1", 5555);
         EXPECT_NE(th, (tapioca_handle*)NULL);
 	}
 	
 	virtual void TearDown() {
         tapioca_close(th);
-		system("cd ..; ./stop.sh; rm *.log; sleep 2; rm -rf /tmp/[pr]log_*; cd unit");
+		//system("cd ..; ./stop.sh; rm *.log; sleep 2; rm -rf /tmp/[pr]log_*; cd unit");
+		system("killall -q cm tapioca example_acceptor example_proposer rec");
+		sleep(2);
+		system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
 	}
-};
 
+};
 
 static int tapioca_put_int(tapioca_handle* th, int k, int v) {
 	return tapioca_put(th, &k, sizeof(int), &v, sizeof(int));
@@ -138,7 +143,7 @@ TEST_F(TapiocaTest, GetLarge) {
 	char* v;
 	char* check;
 	int vsize = 60*1024;
-	int iterations = 100;
+	int iterations = 5;
 	
 	v = (char*)malloc(vsize);
 	check = (char*)malloc(vsize);
@@ -232,7 +237,7 @@ TEST_F(TapiocaTest, Rollback) {
 	}
 }
 
-
+/* TODO Re-enable this test
 TEST_F(TapiocaTest, RecoverySimple) {
 	key* k;
 	val *v1, *v2;
@@ -265,3 +270,4 @@ TEST_F(TapiocaTest, RecoverySimple) {
 
 	remote_mock_free(rm);
 }
+*/
