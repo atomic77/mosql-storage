@@ -30,7 +30,7 @@ extern "C" {
 /*
 	The maximum size of a transaction in bytes
 */
-#define MAX_TRANSACTION_SIZE 64*1000
+#define MAX_TRANSACTION_SIZE 1024*1024
 //#define MAX_TRANSACTION_SIZE 4*1000 //TEMPORARY!
 
 
