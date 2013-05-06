@@ -23,6 +23,22 @@ protected:
     tapioca_handle* th;
     
 	virtual void SetUp() {
+		//system("cd ..; ./start.sh > /dev/null; cd unit");
+		system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/null; cd -");
+		sleep(1);
+        th = tapioca_open("127.0.0.1", 5555);
+        EXPECT_NE(th, (tapioca_handle*)NULL);
+	}
+	
+	virtual void TearDown() {
+        tapioca_close(th);
+		//system("cd ..; ./stop.sh; rm *.log; sleep 2; rm -rf /tmp/[pr]log_*; cd unit");
+		system("killall -q cm tapioca example_acceptor example_proposer rec");
+		sleep(2);
+		system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+	}
+
+/*	virtual void SetUp() {
         int usec = 150000;
                 
         usleep(usec);
@@ -36,6 +52,7 @@ protected:
 	virtual void TearDown() {
         system("cd ..; ./stop.sh; rm *.log; sleep 2; rm -rf /tmp/[pr]log_*; cd unit");
 	}
+	*/
 };
 
 
