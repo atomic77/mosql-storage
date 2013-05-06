@@ -69,13 +69,15 @@ static struct timeval timeout_tv;
 static int submit_transaction(tr_submit_msg *t) {
 	int rv, written;
 	paxos_msg pm;
-	pm.data_size = TR_SUBMIT_MSG_SIZE(t) + sizeof(tr_deliver_msg)
-			 - sizeof(tr_submit_msg);
+	struct evbuffer* payload = evbuffer_new();
+	written = add_validation_state(payload);
+	assert(written == evbuffer_get_length(payload));
+	pm.data_size = evbuffer_get_length(payload);
 	pm.type = submit;
 	LOG(VRB,("Submitting tx of size %d\n", pm.data_size));
 	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
-	written = add_validation_state(acc_bev);
-	assert(written == pm.data_size);
+	bufferevent_write_buffer(acc_bev, payload);
+	evbuffer_free(payload);
 }
 
 static int transaction_fits_in_buffer(tr_submit_msg* m) {

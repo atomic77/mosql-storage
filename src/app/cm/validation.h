@@ -3,7 +3,7 @@
 
 #include "dsmDB_priv.h"
 #include "msg.h"
-#include <event2/bufferevent.h>
+#include <event2/buffer.h>
 
 void init_validation();
 
@@ -30,6 +30,6 @@ int too_old_counter();
 int validate_phase1(tr_submit_msg* t);
 int validate_phase2(tr_submit_msg* t, int commit);
 
-int add_validation_state(struct bufferevent *bev);
+int add_validation_state(struct evbuffer *b);
 
 #endif /* _VALIDATION_H_ */
