@@ -29,8 +29,11 @@ extern "C" {
 
 /*
 	The maximum size of a transaction in bytes
+	We have no legitimate reason to limit this to 64k now but there
+	are many places where this implicit assumption still exists and
+	stack allocations that should be moved onto the heap
 */
-#define MAX_TRANSACTION_SIZE 1024*1024
+#define MAX_TRANSACTION_SIZE 128*1024
 //#define MAX_TRANSACTION_SIZE 4*1000 //TEMPORARY!
 
 
