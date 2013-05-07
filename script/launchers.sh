@@ -1,43 +1,3 @@
-function run_acceptor () {
-	local id=$1
-	local cmd="$acceptor $id $paxos_config"
-	echo "$cmd"
-	
-	$cmd > acceptor$id.log &
-}
-
-
-function run_acceptors () {
-	for (( i = 3; i > 0; i-- )); do
-		run_acceptor $i
-	done
-	sleep 1
-}
-
-
-function run_cm () {
-	local config=$1
-	local cmd="$cm $config $paxos_config"
-	echo "$cmd"
-	
-	$cmd > cm.log &
-}
-
-
-function run_tapioca () {
-	local id=$1
-	local config=$2
-    local port=$3
-	local cmd="$tapioca -d $id $config $paxos_config $port"
-	#local cmd="$tapioca $id $config $paxos_config $port"
-	echo "$cmd"
-	
-	#valgrind --tool=exp-dhat  $cmd > tapioca$id.log 2> tapioca-dhat-tpcc-alt.out &
-	#valgrind --track-origins=yes $cmd > tapioca$id.log 2> tapioca$id.log  &
-	$cmd > tapioca$id.log &
-	sleep 1
-}
-
 
 function do_killall () {
 	local cmd="killall -INT dsmdb cm_node acceptor"
@@ -47,28 +7,75 @@ function do_killall () {
 
 # New launchers
 
+# Launchers accept two parameters - a prefix and suffix 
+# (used for valgrind or adding logging)
 launch_acceptors() {
+	local cmd=""
+	if [ "$1" = "valgrind" ]; then
+		prefix="valgrind $VALGRIND_OPTIONS "
+	fi
 	for i in 2 1 0; do
-		$PAXOS_DIR/bin/example_acceptor $i config/paxos_config.cfg &
+		cmd="$prefix $PAXOS_DIR/bin/example_acceptor $i config/paxos_config.cfg "
+		if [ "$2" = "log" ]; then
+			$cmd > /tmp/acceptor$i.log 2> /tmp/acceptor$i.log &
+		else 
+			$cmd &
+		fi
 		sleep 0.4
 	done
 }
 
 launch_proposers() {
-	$PAXOS_DIR/bin/example_proposer 0 config/paxos_config.cfg &
+	local cmd=""
+	if [ "$1" = "valgrind" ]; then
+		prefix="valgrind $VALGRIND_OPTIONS "
+	fi
+	cmd="$prefix $PAXOS_DIR/bin/example_proposer 0 config/paxos_config.cfg "
+	if [ "$2" = "log" ]; then
+		$cmd > /tmp/proposer0.log 2> /tmp/proposer0.log &
+	else
+		$cmd &
+	fi
 }
 
 launch_rec_nodes () {
+	local cmd=""
+	if [ "$1" = "valgrind" ]; then
+		prefix="valgrind $VALGRIND_OPTIONS "
+	fi
 	echo "Launching rec nodes"
 	#for i in 2 1 0; do
-		bin/rec 0 config/paxos_config.cfg config/1.cfg &
+		cmd="$prefix bin/rec 0 config/paxos_config.cfg config/1.cfg "
+		if [ "$2" = "log" ]; then
+			$cmd > /tmp/rec_1.log 2> /tmp/rec_1.log &
+		else
+			$cmd &
+		fi
 	#done
 }
 
 launch_cm() {
-	bin/cm config/1.cfg config/paxos_config.cfg &    
+	local cmd=""
+	if [ "$1" = "valgrind" ]; then
+		prefix="valgrind $VALGRIND_OPTIONS "
+	fi
+	cmd="$prefix bin/cm config/1.cfg config/paxos_config.cfg"
+	if [ "$2" = "log" ]; then
+		$cmd > /tmp/cm.log 2> /tmp/cm.log &
+	else
+		$cmd &
+	fi
 }
 
 launch_nodes() {
-	bin/tapioca 0 config/1.cfg config/paxos_config.cfg 5555 &
+	local cmd=""
+	if [ "$1" = "valgrind" ]; then
+		prefix="valgrind $VALGRIND_OPTIONS "
+	fi
+	cmd="$prefix bin/tapioca 0 config/1.cfg config/paxos_config.cfg 5555 "
+	if [ "$2" = "log" ]; then
+		$cmd > /tmp/tapioca0.log 2> /tmp/tapioca0.log &
+	else
+		$cmd &
+	fi
 }
