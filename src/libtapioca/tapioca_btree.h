@@ -27,7 +27,7 @@
 #define BPTREE_OP_INVALID_INPUT -16
 #define BPTREE_OP_RETRY_NEEDED -32
 
-#define BPTREE_VALUE_SIZE 4096
+#define BPTREE_VALUE_SIZE 64000
 
 enum bptree_debug_option
 {

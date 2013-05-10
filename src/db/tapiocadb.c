@@ -1,6 +1,7 @@
 #include "tapiocadb.h"
 #include "dsmDB_priv.h"
 #include "config_reader.h"
+#include <libpaxos/config_reader.h>
 #include "sm.h"
 #include "cproxy.h"
 #include "peer.h"
@@ -19,7 +20,7 @@ static const char* tapioca_config;
 static const char* paxos_config;
 static int dump_at_exit = 0;
 static char* dump_path;
-
+static struct config* lp_config;
 
 static void sigint(int sig) {
 	struct timeval killtime;
@@ -67,9 +68,11 @@ int tapioca_init(int node_id, const char* tconfig, const char* pconfig) {
 	tapioca_config = tconfig;
 	paxos_config = pconfig;
 	
+	lp_config = read_config(paxos_config);
+	
 	signal(SIGINT, sigint);
 	signal(SIGSEGV, sigint);
-	signal(SIGKILL, sigint);
+	//signal(SIGKILL, sigint); // bad!! 
 	signal(SIGTERM, sigint);
 	signal(SIGPIPE, SIG_IGN);
 
@@ -105,7 +108,7 @@ void tapioca_add_node(int node_id, char* address, int port) {
 void tapioca_start_and_join(void) {
 	int rv;
 	struct peer* p;
-	rv = sm_init();
+	rv = sm_init(lp_config, base);
 	assert(rv >= 0);
 	rv = cproxy_init(paxos_config, base);
 	assert(rv >= 0);
@@ -117,7 +120,7 @@ void tapioca_start_and_join(void) {
 
 void tapioca_start(int recovery) {
 	int rv;
-	rv = sm_init();
+	rv = sm_init(lp_config, base);
 	assert(rv >= 0);
 	rv = cproxy_init(paxos_config, base);
 	assert(rv >= 0);

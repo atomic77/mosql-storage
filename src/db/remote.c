@@ -13,7 +13,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
 #include <event2/event_struct.h>
 #include <event2/event_compat.h>
 
@@ -36,6 +39,9 @@ static int send_sock;
 static char send_buffer[buffer_size];
 static char recv_buffer[buffer_size];
 static struct event read_ev;
+// We have a rec node per acceptor, but we shouldn't assume that
+// there are only three
+static struct bufferevent **acc_bevs;
 
 // Remote requests timeout
 static struct timeval tv = {0, 50000};
@@ -50,6 +56,9 @@ static int request_timeout_count;
 
 static int recovering = 0;
 
+static int num_recs;
+static int last_rec = 0;
+
 static void on_read(int fd, short ev, void* arg);
 static void handle_remote_get(remote_message* msg);
 static void handle_remote_put(remote_message* msg);
@@ -61,8 +70,64 @@ static void get_request_add(get_request* r);
 static int key_equal(void* k1, void* k2);
 static unsigned int hash_from_key(void* k);
 
+static void
+on_rec_read(struct bufferevent* bev, void* arg) {
+	int n;
+	size_t len;
+	struct sockaddr_in addr;
+	socklen_t addr_len;
+	remote_message* rm;
+	struct evbuffer *b;
+	
+	b = bufferevent_get_input(bev);
+	len = evbuffer_get_length(b);
+	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
 
-int remote_init() {
+	evbuffer_remove(b, recv_buffer, len); 
+
+	rm = (remote_message*)recv_buffer;
+	// FIXME We are getting the vrong message type here on recovery
+	assert(rm->type == REC_KEY_REPLY); // nothing else should come this way
+	handle_rec_key_reply(rm);
+	
+}
+
+
+static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
+    if (ev & BEV_EVENT_CONNECTED) {
+        fprintf(stdout, "remote bufferevent connected to rec\n");
+    } else if (ev & BEV_EVENT_ERROR) {
+        int err = EVUTIL_SOCKET_ERROR();
+        fprintf(stderr, "remote bufferevent: error %d (%s)\n",
+            err, evutil_socket_error_to_string(err));
+    }
+}
+
+static struct bufferevent* rec_connect(struct event_base* b, 
+									const char *address, int port) {
+	struct sockaddr_in sin;
+	struct bufferevent* bev;
+	
+	LOG(VRB,("Connecting to proposer %s : %d\n", address, port));
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(address);
+	sin.sin_port = htons(port);
+	
+	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+	bufferevent_setcb(bev, on_rec_read, NULL, on_socket_event, NULL);
+	struct sockaddr* saddr = (struct sockaddr*)&sin;
+	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
+		bufferevent_free(bev);
+		return NULL;
+	}
+	//event_base_dispatch(b);
+	return bev;
+}
+
+int remote_init(struct config *lp_config, struct event_base *base) {
+	int i;
 	struct peer* p;
 	
 	p = peer_get(NodeID);
@@ -74,6 +139,17 @@ int remote_init() {
 	event_set(&read_ev, recv_sock, EV_READ|EV_PERSIST, on_read, NULL);
 	// event_priority_set(&read_ev, 0);
 	event_add(&read_ev, NULL);
+	
+	// Connect to each rec (one per acceptor). For now assume rec is on
+	// acceptor port + 100
+	num_recs = 1; // lp_config->acceptors_count; connect to first one only
+	last_rec = 0;
+	
+	acc_bevs = malloc(num_recs * sizeof(struct bufferevent *));
+	for (i=0; i<num_recs; i++) {
+		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
+			lp_config->acceptors[i].port+100);
+	}
 	
 	requests = create_hashtable(512, hash_from_key, key_equal, NULL);
 	request_count = 0;
@@ -157,6 +233,7 @@ static void on_read(int fd, short ev, void* arg) {
 		case REMOTE_PUT:
 		handle_remote_put(rm);
         break;
+		// We will no longer receive rec_key_reply msgs over UDP
 		case REC_KEY_REPLY:
 		handle_rec_key_reply(rm);
 		break;
@@ -214,25 +291,24 @@ static int send_rec_key_msg(key* k, rec_key_msg* msg) {
 	unsigned int h;
 	struct sockaddr_in addr;
 	struct peer* p;
+	struct bufferevent *bev;
 	
-	h = joat_hash(k->data, k->size);
-	if (h % 2 == 0)
-		p = peer_get_recnode(1);
-	else
-		p = peer_get_recnode(2);
+	//last_rec = (last_rec + 1) % num_recs;
+	last_rec = 0; // always use the first one
 	
-	assert(p != NULL);
-	socket_set_address(&addr, peer_address(p), peer_port(p));
-	
+//	socket_set_address(&addr, peer_address(p), peer_port(p));
+//	
 	size = (sizeof(rec_key_msg) + msg->ksize);
-	
-	rv = sendto(send_sock,
-		   		msg,
-		   		size,
-		   		0,
-		   		(struct sockaddr*)&addr, 
-		   		sizeof(addr));
-	
+//	
+//	rv = sendto(send_sock,
+//		   		msg,
+//		   		size,
+//		   		0,
+//		   		(struct sockaddr*)&addr, 
+//		   		sizeof(addr));
+//	
+	bev = acc_bevs[last_rec];
+	bufferevent_write(bev,msg,size);
 	return rv;	
 }
 
