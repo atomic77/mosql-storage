@@ -50,6 +50,8 @@ rlog * rlog_init(const char *path) {
       DB_INIT_TXN   |  /* Initialize the transactional subsystem. This
 			* also turns on logging. */
       DB_INIT_MPOOL |  /* Initialize the memory pool (in-memory cache) */
+      DB_REGISTER	|
+     // DB_THREAD	|
 //      DB_AUTO_COMMIT |
       DB_TXN_NOSYNC ;
 //      DB_THREAD;       /* Cause the environment to be free-threaded */
@@ -143,7 +145,7 @@ iid_t rlog_read(rlog *r, key* k) {
 
 	rv = r->dbp->get(r->dbp, NULL, &_k, &_v, 0);
 
-	if (rv == DB_NOTFOUND) return -1;
+	if (rv == DB_NOTFOUND) return 0;
 	if (rv != 0)
 	{
     	r->dbp->err(r->dbp, rv, " get failed on db with error");
@@ -152,8 +154,6 @@ iid_t rlog_read(rlog *r, key* k) {
 	assert(_v.size == sizeof(iid_t));
 	assert(_v.data != NULL);
 	inst = *(iid_t *)_v.data;
-	// For some reason we are double-freeing here; comment for now
-	// free(_v.data);
 
 	return inst;
 }

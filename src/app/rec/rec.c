@@ -1,5 +1,5 @@
 #include "dsmDB_priv.h"
-#include "storage.h"
+#include <libpaxos/storage.h>
 #include <libpaxos.h>
 #include <libpaxos/libpaxos_messages.h>
 #include <libpaxos/config_reader.h>
@@ -10,15 +10,15 @@
 #include "peer.h"
 #include "hash.h"
 #include "tapiocadb.h"
+#include "carray.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
-// #include <event2/event_compat.h>
-// #include <event2/event.h>
-// #include <event2/event_struct.h>
-
+#include <errno.h>
+#include <event2/listener.h>
+#include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
@@ -31,11 +31,12 @@ struct header {
 #define VERBOSE 0
 #define buffer_size MAX_TRANSACTION_SIZE
 
-static void handle_rec_key();
+static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) ;
 
-typedef void (*handler)(char*, int);
-static handler handle[] = 
-	{ handle_rec_key };
+// The rec only responds to one type of message so this is unnecessary atm
+//typedef void (*handler)(char*, int);
+//static handler handle[] = 
+//	{ handle_rec_key };
 
 static rlog *rl;
 static struct storage *ssm = NULL;
@@ -45,6 +46,7 @@ static int send_sock;
 static char recv_buffer[buffer_size];
 static char send_buffer[buffer_size];
 static struct event_base *base;
+static struct carray* bevs;
 
 static iid_t Iid = 0;
 static int rec_key_count = 0;
@@ -77,51 +79,6 @@ static void index_entry_print(key* k, off_t off) {
 	printf("   IID: %lld\n", off);
 }
 
-
-void send_rec_key_reply(int id, rec_key_reply* rep) {
-	int size;
-	struct peer* p;
-	struct sockaddr_in addr;
-	
-	p = peer_get(id);
-	if (p == NULL) {
-		printf("Peer %d not found. dropping request\n", id);
-		return;
-	}
-	socket_set_address(&addr, peer_address(p), peer_port(p));
-	size = rep->size + sizeof(rec_key_reply);
-	
-	sendto(send_sock,
-			rep,
-			size, 
-			0,
-			(struct sockaddr*)&addr, 
-			sizeof(addr));
-}
-
-
-/*
-static void prepare_reply_data(key* k, paxos_msg* rec, rec_key_reply* reply) {
-	int i, offset;
-	flat_key_val* kv;
-	tr_deliver_msg* dmsg;
-	
-	dmsg = (tr_deliver_msg*)rec->cmd_value;
-	offset = (dmsg->aborted_count + dmsg->committed_count) * sizeof(tr_id);
-	
-	for (i = 0; i < dmsg->updateset_count; i++) {
-    	kv = (flat_key_val*)&dmsg->data[offset];
-		if ((kv->ksize == k->size) && (memcmp(kv->data, k->data, k->size) == 0)) {
-			reply->size = kv->vsize;
-			reply->version = dmsg->ST;
-			memcpy(reply->data, &kv->data[kv->ksize], kv->vsize);
-		}
-    	offset += FLAT_KEY_VAL_SIZE(kv);
-	}
-}
-*/
-
-
 static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* reply) {
 	int i, offset;
 	flat_key_val* kv;
@@ -142,7 +99,7 @@ static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* repl
 }
 
 
-static void handle_rec_key(char* buffer, int size) {
+static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 	key k;
 	iid_t iid;
 //	paxos_msg* rec;
@@ -175,15 +132,20 @@ static void handle_rec_key(char* buffer, int size) {
 	k.size = rm->ksize;
 	k.data = rm->data;
 	iid = rlog_read(rl, &k);
-	if (iid != -1) {
+	if (iid > 0) {
 		index_entry_print(&k, iid);
+		storage_tx_begin(ssm);
 		accept_ack *ar = storage_get_record(ssm, iid);
+		storage_tx_commit(ssm);
 		if (ar == NULL) {
-			fprintf(stderr, "Paxos log read error on iid %d \n", iid);
+			LOG(VRB, ("Paxos log read error on iid %d \n", iid));
 			assert(1337 == 0xDEADBEEF);
 			return;
 		}
-		assert(ar->value_size > 0);
+		if(ar->value_size == 0) {
+			printf("acc. record is final %d iid %d ballot %d\n" , ar->is_final, ar->iid, ar->ballot);
+			assert(11337 == 0xDBCAFE);
+		}
 		dmsg = (tr_deliver_msg *)ar->value;
 /*		rec = (accept_ack *) malloc(ACCEPT_ACK_SIZE(ar) + sizeof(paxos_msg));
 		rec-> = ir->inst_number;
@@ -195,14 +157,14 @@ static void handle_rec_key(char* buffer, int size) {
 		rep->type = REC_KEY_REPLY;
 		rep->req_id = rm->req_id;
 		prepare_reply_data(&k,dmsg,rep);
-		free(ar);
+		//free(ar);
 	} else {
 		rep->type = REC_KEY_REPLY;
 		rep->req_id = rm->req_id;
 		rep->size = 0;
 	}
 	
-	send_rec_key_reply(rm->node_id, rep);
+	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
 }
 
 
@@ -255,7 +217,7 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	Iid++; // Update global instance id
 	
-	printf("Rec learned value size %d\n", size); 
+	LOG(VRB, ("Rec learned value size %d\n", size)); 
 	struct header* h = (struct header*)value;
 	switch (h->type) {
 		case TRANSACTION_SUBMIT:
@@ -267,33 +229,6 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 	}
 }
 
-
-static void on_request(int fd, short ev, void* arg) {
-	int n;
-	int* type;
-	socklen_t addr_len;
-	struct sockaddr_in addr;
-	
-	addr_len = sizeof(struct sockaddr_in);
-	memset(&addr, '\0', addr_len);
-	
-	n = recvfrom(recv_sock,
-				 recv_buffer,
-				 buffer_size,
-				 0,
-				 (struct sockaddr*)&addr,
-				 &addr_len);
-	assert(n != -1);
-	
-	// We expect the "type" to be in the first 4 bytes
-	type = ((int*)recv_buffer);
-	if (*type >= (sizeof(handle) / sizeof(handler)) || *type < 0) {
-		printf("Error: ignoring message of type %d\n", *type);
-		return;
-	}
-	
-	handle[*type](recv_buffer, n);
-}
 
 // TODO Deprecated now that BDB working correctly; may need some variation of
 // this logic for recovery however
@@ -310,7 +245,7 @@ void reload_keys() {
 		n++;
 		if(iid == -1) break;
 	}
-	printf("PLOG: Loaded %d keys from BDB\n", n);
+	LOG(VRB, ("PLOG: Loaded %d keys from BDB\n", n));
 }
 
 void sigint(int sig) {
@@ -320,6 +255,84 @@ void sigint(int sig) {
 	rlog_close(rl);
 	storage_close(ssm);
 	exit(0);
+}
+
+// TODO There is a lot of duplicated libevent code here from the certifier
+static void
+on_rec_request(struct bufferevent* bev, void* arg)
+{
+	size_t len;
+	struct evbuffer* b;
+	
+	b = bufferevent_get_input(bev);
+	
+	len = evbuffer_get_length(b);
+	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
+
+	evbuffer_remove(b, recv_buffer, len); 
+
+	// We expect the "type" to be in the first 4 bytes
+	int32_t *msg_type = ((int*)recv_buffer);
+	assert(*msg_type == 0); // The rec shouldn't receive any other messages right now
+	
+	handle_rec_key(recv_buffer, len, bev);
+}
+
+
+static void
+on_bev_error(struct bufferevent *bev, short events, void *arg)
+{
+	if (events & BEV_EVENT_ERROR)
+		perror("Error from bufferevent");
+	if (events & (BEV_EVENT_EOF|BEV_EVENT_ERROR))
+		bufferevent_free(bev);
+}
+
+static void
+on_connect(struct evconnlistener *l, evutil_socket_t fd,
+	struct sockaddr *addr, int socklen, void *arg)
+{
+	struct event_base* b = evconnlistener_get_base(l);
+	struct bufferevent *bev = bufferevent_socket_new(b, fd, 
+		BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_setcb(bev, on_rec_request, NULL, on_bev_error, arg);
+	bufferevent_enable(bev, EV_READ);
+ 	carray_push_back(bevs, bev);
+	LOG(VRB, ("accepted connection from...\n"));
+}
+
+static void
+on_listener_error(struct evconnlistener* l, void* arg)
+{
+	struct event_base *base = evconnlistener_get_base(l);
+	int err = EVUTIL_SOCKET_ERROR();
+	fprintf(stderr, "Got an error %d (%s) on the listener. "
+		"Shutting down.\n", err, evutil_socket_error_to_string(err));
+
+	event_base_loopexit(base, NULL);
+}
+
+struct evconnlistener *
+bind_new_listener(struct event_base* b, address* a,
+ 	evconnlistener_cb conn_cb, evconnlistener_errorcb err_cb)
+{
+	struct evconnlistener *el;
+	struct sockaddr_in sin;
+	unsigned flags = LEV_OPT_CLOSE_ON_EXEC
+		| LEV_OPT_CLOSE_ON_FREE
+		| LEV_OPT_REUSEABLE;
+	
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(a->address_string);
+	sin.sin_port = htons(a->port);
+	el = evconnlistener_new_bind(
+		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
+	assert(el != NULL);
+	evconnlistener_set_error_cb(el, err_cb);
+ 	bevs = carray_new(10);
+	
+	return el;
 }
 
 
@@ -332,34 +345,30 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	signal(SIGINT, sigint);
 	load_config_file(tapioca_conf);
 	
-	
-	// FIXME The rec is not learning properly likely due to the mixture of
-	// compatibility mode libevent and the event2 stuff used by libpaxos; 
-	// need to clean this up
-// 	event_init();
-	
 	aid = acceptor_id;
-	
-	// Move this to TCP stream based 
-	recv_sock = udp_bind_fd(port);
-	socket_make_non_block(recv_sock);
-// 	event_set(&request_ev, recv_sock, EV_READ|EV_PERSIST, on_request, NULL);
-// 	event_add(&request_ev, NULL);
-	
-	send_sock = udp_socket();
-	socket_make_non_block(send_sock);
 	base = event_base_new();
-
+	
+	// Start learner
 	struct learner *l = learner_init(paxos_conf, on_deliver, NULL, base);
 	assert(l != NULL);
 	
+	// Create new listener for recovery requests
+	struct config* conf = read_config(paxos_conf);
+	address a;
+	a.address_string = "0.0.0.0";
+	// For now define a rec as listening on acceptor port + 100
+	a.port = conf->acceptors[acceptor_id].port+100;
+	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
+
 	// Open acceptor logs
-    ssm = storage_open(acceptor_id, 0);
+    ssm = storage_open(acceptor_id, 1);
     assert(ssm != NULL);
 
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);
 	rl = rlog_init(rec_db_path);
 	assert(rl != NULL);
+	
+	event_base_dispatch(base);
 
 /*	// Reload any keys that happen to be in the BDB log
 	reload_keys();*/

@@ -23,15 +23,6 @@ void socket_set_recv_size(int fd, int size);
 void socket_set_send_size(int fd, int size);
 void socket_set_address(struct sockaddr_in* addr, const char* addrstring, int port);
 
-/** Convenience method to create a buffered connection to a host.
- *  The caller should then do bufferevent_setcb to configure the callbacks
-	@param b a valid event_base
-	@param a an address to connect to
-	@return a bufferevent handle, or NULL on error */
-struct bufferevent* 
-ev_buffered_connect(struct event_base* b, const char *address_string, int port,
-					short int event_type);
-
 #ifdef __cplusplus
 }
 #endif
