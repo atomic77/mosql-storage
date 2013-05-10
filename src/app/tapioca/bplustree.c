@@ -81,6 +81,12 @@ bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
 bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
 		size_t *nsize);
+
+
+// FIXME There is no longer any good reason to have commit done inside of
+// these methods; the client is unlikely to want to have a committed  bpt 
+// if the other metadata it writes has to be retried. i.e. merge these next 
+// two methods together or rename this one
 // A special open-only form of the init bpt session that does not call commit
 // REQUIRES an externally-maintained UNIQUE execution_id to be provided!!
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
@@ -121,50 +127,35 @@ int bptree_initialize_bpt_session(bptree_session *bps,
 	rv_c = -1;
 	attempts = 0;
 	bps->cached_key_dirty = 1; // Expire anything that may be cached
+	
+	switch (open_flags) {
+		case BPTREE_OPEN_ONLY:
+		case BPTREE_OPEN_CREATE_IF_NOT_EXISTS:
 
-	while (rv_c < 0 && attempts < 10)
-	{
-		switch (open_flags) {
-			case BPTREE_OPEN_ONLY:
-			case BPTREE_OPEN_CREATE_IF_NOT_EXISTS:
+			// Do read stuff here
+			bpm = read_meta_node(bps,&rv);
 
-				// Do read stuff here
-				bpm = read_meta_node(bps,&rv);
+			if (rv == BPTREE_OP_TAPIOCA_NOT_READY ||
+					rv == BPTREE_OP_METADATA_ERROR) return rv;
 
-				if (rv == BPTREE_OP_TAPIOCA_NOT_READY ||
-						rv == BPTREE_OP_METADATA_ERROR) return rv;
+			if (open_flags == BPTREE_OPEN_ONLY ||
+					rv == BPTREE_OP_NODE_FOUND) break;
 
-				if (open_flags == BPTREE_OPEN_ONLY ||
-						rv == BPTREE_OP_NODE_FOUND) break;
-
-				// Yes, the lack of break here is intentional
-			case BPTREE_OPEN_OVERWRITE:
-				// If we're here, we're overwriting or we're creating a bpt
-				// that didn't exist
-				bpm = create_bptree_or_reset(bps, &rv);
-				if (rv != BPTREE_OP_NODE_FOUND) return rv;
-				break;
-			default:
-				return BPTREE_OP_INVALID_INPUT;
-				break;
-		}
-		assert(bpm->bpt_id == bpt_id);
-		bps->execution_id = ++bpm->execution_id;
-		write_meta_node(bps, bpm, NULL);
-		rv_c = transaction_commit(bps->t,bps->tapioca_client_id, on_commit);
-		free_meta_node(&bpm);
-		++attempts;
-		if (rv_c < 0) {
-			usleep((rand() % 2000) * 1000);
-		}
+			// Yes, the lack of break here is intentional
+		case BPTREE_OPEN_OVERWRITE:
+			// If we're here, we're overwriting or we're creating a bpt
+			// that didn't exist
+			bpm = create_bptree_or_reset(bps, &rv);
+			if (rv != BPTREE_OP_NODE_FOUND) return rv;
+			break;
+		default:
+			return BPTREE_OP_INVALID_INPUT;
+			break;
 	}
-
-	if (attempts >= 10)
-	{
-		printf("Could not connect to bptree after %d tries\n", attempts);
-		return BPTREE_OP_FAIL;
-	}
-
+	assert(bpm->bpt_id == bpt_id);
+	bps->execution_id = ++bpm->execution_id;
+	write_meta_node(bps, bpm, NULL);
+	free_meta_node(&bpm);
 	printf( "Connected to b+tree id %d node id %d exec %d %d attempts "
 			"rv_c: %d \n", bpt_id, bps->tapioca_client_id,
 			bps->execution_id, attempts, rv_c);
