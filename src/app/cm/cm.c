@@ -46,16 +46,12 @@ static time_t first_submitted;
 static time_t last_submitted;
 static int max_count = 0;
 
+static unsigned char *read_buffer;
+
 
 static void print_stats();
 
-#ifndef MAX_MESSAGE_SIZE
-#define RECV_BSIZE 8 * 1024
-#define MAX_COMMAND_SIZE RECV_BSIZE
-#define MAX_MESSAGE_SIZE RECV_BSIZE
-//#define RECV_BSIZE MAX_MESSAGE_SIZE
-#endif
-
+#define MAX_COMMAND_SIZE 1024 * 1024
 static struct event_base *base;
 static struct bufferevent *acc_bev;
 static struct event *timeout_ev;
@@ -79,12 +75,6 @@ static int submit_transaction(tr_submit_msg *t) {
 	bufferevent_write_buffer(acc_bev, payload);
 	evbuffer_free(payload);
 }
-
-static int transaction_fits_in_buffer(tr_submit_msg* m) {
-    int bytes_if_commits = m->writeset_size + sizeof(tr_id);
-    return (bytes_left > (sizeof(tr_deliver_msg) + bytes_if_commits));
-}
-
 
 // Since we are no longer batching tx due to the use of TCP we can
 // submit right away
@@ -156,51 +146,6 @@ struct request {
 	char data[0];
 };
 
-static void handle_request(struct request *req, char* buffer, size_t size) {
-	switch (req->type) {
-		case TRANSACTION_SUBMIT:
-			validate_buffer(buffer, size);
-			break;
-		case NODE_JOIN:
-			handle_join_message(buffer, size);
-			break;
-		default:
-			printf("handle_request: dropping message of unkown type\n");
-	}
-}
-
-
-// static void cm_loop(int fd) {
-// 	int n;
-// 	char* b;
-// 	socklen_t addr_len;
-// 	struct sockaddr_in addr;
-// 
-// 	addr_len = sizeof(struct sockaddr_in);
-// 
-// 	// TODO Here we need to move to a libevent based listener
-// 	while (1) {
-// 		b = malloc(RECV_BSIZE + sizeof(int));
-// 		n = recvfrom(fd,
-// 					 b,
-// 					 RECV_BSIZE,
-// 					 0,
-// 					 (struct sockaddr*)&addr,
-// 					 &addr_len);
-// 
-// 		if (n == -1) {
-// 			perror("recvfrom");
-// 			continue;
-// 		}
-// 
-// 		received_bytes += n;
-// 		if (n > max_batch_size)
-// 			max_batch_size = n;
-// 
-// 		handle_request(b, n);
-// 	}
-// }
-
 static void signal_int(int sig) {
 	print_stats();
 	exit(0);
@@ -220,27 +165,38 @@ static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
 static void
 on_read(struct bufferevent* bev, void* arg)
 {
-	size_t len;
-	paxos_msg msg;
+	size_t len, dlen;
 	char *buf;
 	struct evbuffer* b;
-	struct request *req;
+	struct request req;
+	join_msg jmsg;
+	tr_submit_msg *tmsg = malloc(sizeof(tr_submit_msg));
 	
 	b = bufferevent_get_input(bev);
+	if(evbuffer_get_length(b) < sizeof(struct request)) return;
 	
-	len = evbuffer_get_length(b);
-	assert (len > 0 && len < 1024 * 1024); // some arbitrary large # for now
-	buf = malloc(len);
-
-	evbuffer_remove(b, buf, len); 
-
-	// The header of the submit_msg is basically a struct request anyway
-	req = (struct request *) buf; 
+	evbuffer_copyout(b, &req, sizeof(struct request));
+	switch (req.type) {
+		case TRANSACTION_SUBMIT:
+			len = evbuffer_get_length(b);
+			if(len < sizeof(tr_submit_msg) ) return;
+			
+			evbuffer_copyout(b, tmsg, sizeof(tr_submit_msg));
+			dlen = TR_SUBMIT_MSG_SIZE(tmsg);
+			free(tmsg); 
+			if (len < dlen) return;
+			
+			evbuffer_remove(b, read_buffer, dlen);
+			validate((tr_submit_msg *) read_buffer);
+			break;
+		case NODE_JOIN:
+			printf("dropping message NODE_JOIN -- to be reimplemented\n");
+			break;  
+		default: 
+			printf("dropping unknown message type %d \n",req.type);
+	}
 	
-	// As we do no batching all requests are of size 1 now
-	handle_request(req, buf, 1);
-	
-	//free(buf); // done in the caller
+			
 }
 
 
@@ -318,6 +274,9 @@ proposer_connect(struct event_base* b, address* a) {
 		bufferevent_free(bev);
 		return NULL;
 	}
+	printf("Read/write max %ld %ld \n", 
+		bufferevent_get_max_to_read(bev), 
+		bufferevent_get_max_to_write(bev));
 
 	return bev;
 }
@@ -339,18 +298,16 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	acc_bev =  proposer_connect(base, &conf->proposers[0]);
 	assert(acc_bev != NULL);
 	
-	bytes_left = MAX_COMMAND_SIZE;
+	read_buffer = malloc(MAX_COMMAND_SIZE);
+	memset(read_buffer, 0, MAX_COMMAND_SIZE);
 	
 	/* Setup local listener */
 	address a;
 	a.address_string = LeaderIP;
 	a.port = LeaderPort;
 	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
-// 	cm_fd = udp_bind_fd(LeaderPort);
 	gettimeofday(&timeout_tv, NULL);
-	
-// 	cm_loop(cm_fd);
-	
+
 	event_base_dispatch(base);
 }
 

@@ -240,12 +240,7 @@ static void init_batch(batch* b) {
 static void send_batch(batch* b) {
 	int rv;
 
-// 	rv = send(cert_sock, b->buffer, b->buffer_offset, 0);
-	
-	bufferevent_write(cert_bev, b->buffer, b->buffer_offset);
-	//event_base_dispatch(base);
-	if (rv == -1)
-		perror("send_batch");
+	rv = bufferevent_write(cert_bev, b->buffer, b->buffer_offset);
 	
 	submitted_batch++;
 	submitted_tx += b->count;
