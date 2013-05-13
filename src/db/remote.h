@@ -2,7 +2,8 @@
 #define _REMOTE_H_
 
 #include "dsmDB_priv.h"
-#include <libpaxos/config_reader.h>
+#include <evpaxos/config_reader.h>
+#include <event2/event.h>
 
 
 typedef void(*sm_get_cb)(key*, val*, void*);

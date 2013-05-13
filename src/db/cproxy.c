@@ -15,7 +15,9 @@
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
-#include "libpaxos.h"
+#include <libpaxos/libpaxos.h>
+#include <libpaxos/libpaxos_messages.h>
+#include <evpaxos/evpaxos.h>
 
 
 #define bsize MAX_TRANSACTION_SIZE
@@ -95,7 +97,7 @@ int cproxy_init(const char* paxos_config, struct event_base *b) {
 	base = b; 
 	cert_bev = cm_connect(base, LeaderIP, LeaderPort);
 	assert(cert_bev != NULL);
-	l = learner_init(paxos_config, on_deliver, NULL, base);
+	l = evlearner_init(paxos_config, on_deliver, NULL, base);
 	assert(l != NULL);
 	init_batch(&tx_batch);
  	tx_batch.timeout_ev = evtimer_new(base, on_batch_timeout, &tx_batch);

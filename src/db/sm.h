@@ -3,7 +3,7 @@
 
 #include "dsmDB_priv.h"
 #include <event2/bufferevent.h>
-#include <libpaxos/config_reader.h>
+#include <evpaxos/config_reader.h>
 
 int sm_init(struct config *lp_config, struct event_base *base);
 

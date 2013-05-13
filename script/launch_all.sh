@@ -46,7 +46,7 @@ check_env () {
 		exit 1
 	fi
 
-	if [ ! -e $PAXOS_DIR/bin/example_acceptor ]; then
+	if [ ! -e $PAXOS_DIR/bin/acceptor ]; then
 		echo "Provide a correct libpaxos directory, did not find acceptor"
 		echo "in $PAXOS_DIR/bin"
 		exit 1
@@ -106,13 +106,13 @@ done
 check_env
 
 echo "SIGINT'ing all procs"
-killall -q -INT cm tapioca example_acceptor example_proposer rec
+killall -q -INT cm tapioca acceptor proposer rec
 #pkill -u $USER -f valgrind
 sleep $DELAY
 
 if [ "$KILL" = "y" ]; then
 	echo "SIGKILL'ing all procs... they had $DELAY seconds."
-	killall -q -9 cm tapioca example_acceptor example_proposer rec
+	killall -q -9 cm tapioca acceptor proposer rec
 #	pkill -9 -u $USER -f valgrind
 fi
 

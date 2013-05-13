@@ -1,4 +1,4 @@
-#include <libpaxos/config_reader.h>
+#include <evpaxos/config_reader.h>
 
 #include "config_reader.h"
 #include "dsmDB_priv.h"
@@ -8,7 +8,8 @@
 #include "util.h"
 
 
-//#include "libpaxos.h"
+#include <libpaxos.h>
+#include <libpaxos/libpaxos_messages.h>
 //#include "libpaxos_messages.h"
 #include "msg.h"
 #include "tapiocadb.h"
