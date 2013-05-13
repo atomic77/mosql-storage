@@ -3,7 +3,7 @@
 PROGNAME=${0##*/} 
 # Options for script, in order given in LONGOPTS
 CLEARDB="n"
-PAXOS_DIR=/home/atomic/local/libpaxos
+PAXOS_DIR=~/local/libpaxos
 KILL="n"
 NOREC="n"
 NOPROP="n"
@@ -81,7 +81,7 @@ while true; do
 		echo "Setting delay to $1"
 		DELAY=$1
 		;;
-      -p|--paxos) 
+      -p|--paxos-dir) 
 		shift
 		echo "Setting Paxos dir to $1"
 		PAXOS_DIR=$1
