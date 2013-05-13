@@ -31,7 +31,7 @@ struct header {
 #define VERBOSE 0
 #define buffer_size MAX_TRANSACTION_SIZE
 
-static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) ;
+static rec_key_reply * handle_rec_key(rec_key_msg *rm) ;
 
 // The rec only responds to one type of message so this is unnecessary atm
 //typedef void (*handler)(char*, int);
@@ -99,34 +99,17 @@ static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* repl
 }
 
 
-static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
+static rec_key_reply * handle_rec_key(rec_key_msg *rm) {
 	key k;
 	iid_t iid;
-//	paxos_msg* rec;
 	tr_deliver_msg *dmsg;
-	rec_key_msg* rm;
 	rec_key_reply* rep;
 	
 	rec_key_count++;
 	
-	rm = (rec_key_msg*)buffer;
 	rep = (rec_key_reply*)send_buffer;
 	
-	if (size <= (sizeof(rec_key_msg))) {
-		printf("Error: Ignoring rec_key_msg of wrong size, got %d, expect %d\n",
-				size, sizeof(rec_key_msg));
-		assert(false);
-		return;
-	}
-	
-	if (size != (sizeof(rec_key_msg) + rm->ksize)) {
-		printf("Error: Ignoring rec_key_msg of wrong size, got %d, expect %d + %d\n",
-				size, (sizeof(rec_key_msg)) , rm->ksize);
-		assert(false);
-		return;
-	}
-	
-	print_rec_key_msg(rm, size);
+//	print_rec_key_msg(rm, size);
 	
 	// Lookup the index
 	k.size = rm->ksize;
@@ -164,7 +147,6 @@ static void handle_rec_key(char* buffer, int size, struct bufferevent *bev) {
 		rep->size = 0;
 	}
 	
-	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
 }
 
 
@@ -257,25 +239,26 @@ void sigint(int sig) {
 	exit(0);
 }
 
-// TODO There is a lot of duplicated libevent code here from the certifier
-static void
-on_rec_request(struct bufferevent* bev, void* arg)
+static void on_rec_request(struct bufferevent* bev, void* arg)
 {
 	size_t len;
 	struct evbuffer* b;
+	rec_key_msg rm;
+	rec_key_reply *rep;
 	
 	b = bufferevent_get_input(bev);
+	if(evbuffer_get_length(b) < sizeof(rec_key_msg)) return;
 	
+	evbuffer_copyout(b, &rm, sizeof(rec_key_msg));
 	len = evbuffer_get_length(b);
-	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
+	if (len < sizeof(rec_key_msg) + rm.ksize) return;
+	
+	assert(len == sizeof(rec_key_msg) + rm.ksize);
 
 	evbuffer_remove(b, recv_buffer, len); 
 
-	// We expect the "type" to be in the first 4 bytes
-	int32_t *msg_type = ((int*)recv_buffer);
-	assert(*msg_type == 0); // The rec shouldn't receive any other messages right now
-	
-	handle_rec_key(recv_buffer, len, bev);
+	rep = handle_rec_key((rec_key_msg *)recv_buffer);
+	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
 }
 
 
