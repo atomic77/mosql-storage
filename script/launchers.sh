@@ -15,7 +15,7 @@ launch_acceptors() {
 		prefix="valgrind $VALGRIND_OPTIONS "
 	fi
 	for i in 2 1 0; do
-		cmd="$prefix $PAXOS_DIR/bin/example_acceptor $i config/paxos_config.cfg "
+		cmd="$prefix $PAXOS_DIR/bin/acceptor $i config/paxos_config.cfg "
 		if [ "$2" = "log" ]; then
 			$cmd > /tmp/acceptor$i.log 2> /tmp/acceptor$i.log &
 		else 
@@ -30,7 +30,7 @@ launch_proposers() {
 	if [ "$1" = "valgrind" ]; then
 		prefix="valgrind $VALGRIND_OPTIONS "
 	fi
-	cmd="$prefix $PAXOS_DIR/bin/example_proposer 0 config/paxos_config.cfg "
+	cmd="$prefix $PAXOS_DIR/bin/proposer 0 config/paxos_config.cfg "
 	if [ "$2" = "log" ]; then
 		$cmd > /tmp/proposer0.log 2> /tmp/proposer0.log &
 	else

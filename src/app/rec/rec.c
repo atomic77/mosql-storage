@@ -2,7 +2,7 @@
 #include <libpaxos/storage.h>
 #include <libpaxos.h>
 #include <libpaxos/libpaxos_messages.h>
-#include <libpaxos/config_reader.h>
+#include <evpaxos/config_reader.h>
 #include "config_reader.h"
 #include "socket_util.h"
 #include "index.h"
@@ -335,7 +335,7 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	base = event_base_new();
 	
 	// Start learner
-	struct learner *l = learner_init(paxos_conf, on_deliver, NULL, base);
+	struct learner *l = evlearner_init(paxos_conf, on_deliver, NULL, base);
 	assert(l != NULL);
 	
 	// Create new listener for recovery requests

@@ -9,7 +9,7 @@ find_package(LIBUUID REQUIRED)
 find_package(MSGPACK REQUIRED)
 
 # System libraries
-set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} pthread)
+set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} pthread )
 if(NOT APPLE)
 	set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} m rt pthread)
 endif()

@@ -1,7 +1,7 @@
 #include "tapiocadb.h"
 #include "dsmDB_priv.h"
 #include "config_reader.h"
-#include <libpaxos/config_reader.h>
+#include <evpaxos/config_reader.h>
 #include "sm.h"
 #include "cproxy.h"
 #include "peer.h"
