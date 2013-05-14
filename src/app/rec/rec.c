@@ -29,7 +29,6 @@ struct header {
 
 
 #define VERBOSE 0
-#define buffer_size MAX_TRANSACTION_SIZE
 
 static rec_key_reply * handle_rec_key(rec_key_msg *rm) ;
 
@@ -43,8 +42,8 @@ static struct storage *ssm = NULL;
 static int aid;
 static int recv_sock;
 static int send_sock;
-static char recv_buffer[buffer_size];
-static char send_buffer[buffer_size];
+static char recv_buffer[MAX_TRANSACTION_SIZE];
+static char send_buffer[MAX_TRANSACTION_SIZE];
 static struct event_base *base;
 static struct carray* bevs;
 
@@ -147,6 +146,7 @@ static rec_key_reply * handle_rec_key(rec_key_msg *rm) {
 		rep->size = 0;
 	}
 	
+	return rep;
 }
 
 
