@@ -33,8 +33,7 @@ extern "C" {
 	are many places where this implicit assumption still exists and
 	stack allocations that should be moved onto the heap
 */
-#define MAX_TRANSACTION_SIZE 128*1024
-//#define MAX_TRANSACTION_SIZE 4*1000 //TEMPORARY!
+#define MAX_TRANSACTION_SIZE 64*1000
 
 
 
