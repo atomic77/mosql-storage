@@ -253,12 +253,7 @@ static void on_rec_request(struct bufferevent* bev, void* arg)
 	len = evbuffer_get_length(b);
 	if (len < sizeof(rec_key_msg) + rm.ksize) return;
 	
-	evbuffer_remove(b, recv_buffer, len); 
-
-	//assert(len == sizeof(rec_key_msg) + rm.ksize);
-	if(len > sizeof(rec_key_msg) + rm.ksize)  {
-		printf("REC: Warning-- got more data in rec req than expected\n");
-	}
+	evbuffer_remove(b, recv_buffer, sizeof(rec_key_msg) + rm.ksize); 
 
 	rep = handle_rec_key((rec_key_msg *)recv_buffer);
 	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
