@@ -8,6 +8,7 @@
 #include "transaction.h"
 #include "hashtable_itr.h"
 
+#include <libpaxos.h>
 
 static void add_to_set(struct hashtable* h, key* k, val* v);
 static void remote_get_cb(key* k, val* v, void* arg);

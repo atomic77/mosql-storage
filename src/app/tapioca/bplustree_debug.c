@@ -253,7 +253,7 @@ int verify_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 {
 	int ksize, vsize, rv;
-	unsigned char k[BPTREE_VALUE_SIZE], v[BPTREE_VALUE_SIZE];
+	unsigned char k[BPTREE_MAX_VALUE_SIZE], v[BPTREE_MAX_VALUE_SIZE];
 	char uuid_out[40];
 	char s1[512];
 	printf("Dumping bpt_id %d:\n",bps->bpt_id);

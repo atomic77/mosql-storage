@@ -33,7 +33,7 @@ extern "C" {
 	are many places where this implicit assumption still exists and
 	stack allocations that should be moved onto the heap
 */
-#define MAX_TRANSACTION_SIZE 64*1000
+#define MAX_TRANSACTION_SIZE PAXOS_MAX_VALUE_SIZE
 
 
 

@@ -16,12 +16,12 @@
 #include <event2/event_compat.h>
 #include <event2/bufferevent.h>
 #include <event2/bufferevent_compat.h>
+#include <libpaxos.h>
 
 #include "tcp.h"
 #include "http.h"
 #include "hash.h"
 #include "hashtable.h"
-//#include "transaction.h"
 #include "bplustree.h"
 
 

@@ -2,6 +2,7 @@ include_directories(${CMAKE_SOURCE_DIR}/libtapioca)
 include_directories(${CMAKE_SOURCE_DIR}/db)
 include_directories(${CMAKE_SOURCE_DIR}/util)
 include_directories(${LIBEVENT_INCLUDE_DIRS})
+include_directories(${LIBPAXOS_INCLUDE_DIRS})
 include_directories(${MSGPACK_INCLUDE_DIRS})
 include_directories(${LIBUUID_INCLUDE_DIRS})
 
