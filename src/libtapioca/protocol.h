@@ -3,9 +3,6 @@
 
 #include "tapioca.h"
 
-//#include <stdint.h>
-//#include "../app/tapioca/bplustree_client.h"
-
 void* protocol_open(const char* address, int port);
 void protocol_close(void* ph);
 int protocol_node_id(void* ph);

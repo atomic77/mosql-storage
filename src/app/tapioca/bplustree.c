@@ -1291,7 +1291,7 @@ bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
 			&bpm->root_key, sizeof(uuid_t),
 			&bpm->bpt_id);
 	rv = tpl_load(tn, TPL_MEM | TPL_PREALLOCD | TPL_EXCESS_OK, buf,
-			BPTREE_VALUE_SIZE);
+			BPTREE_MAX_VALUE_SIZE);
 	if (rv < 0) goto unmarshall_exception;
 	rv = tpl_unpack(tn, 0);
 	if (rv < 0) goto unmarshall_exception;
@@ -1593,7 +1593,7 @@ bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz, size_t *nsi
 
 	*nsize += sizeof(bptree_node);
 	rv = tpl_load(tn, TPL_MEM | TPL_PREALLOCD | TPL_EXCESS_OK, buf,
-			BPTREE_VALUE_SIZE);
+			BPTREE_MAX_VALUE_SIZE);
 	if (rv == -1) goto unmarshall_exception;
 
 	rv = tpl_unpack(tn, 0); // unpack the non-array elements.
@@ -1605,7 +1605,7 @@ bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz, size_t *nsi
 		rv2 = tpl_unpack(tn, 2);
 		if (rv1 < 0 || rv2 < 0) return NULL;
 		// TODO Defend against bad malloc
-		if (tb_keys.sz > BPTREE_VALUE_SIZE || tb_values.sz > BPTREE_VALUE_SIZE)
+		if (tb_keys.sz > BPTREE_MAX_VALUE_SIZE || tb_values.sz > BPTREE_MAX_VALUE_SIZE)
 			return NULL;
 		n->keys[i] = malloc(tb_keys.sz);
 		memcpy(n->keys[i], tb_keys.addr, tb_keys.sz);
@@ -2370,8 +2370,8 @@ int are_key_and_value_sizes_valid(bptree_node* n)
 	int i;
 	for (i = 0; i < n->key_count; i++)
 	{
-		if (n->key_sizes[i] > BPTREE_VALUE_SIZE
-			|| n->value_sizes[i]> BPTREE_VALUE_SIZE
+		if (n->key_sizes[i] > BPTREE_MAX_VALUE_SIZE
+			|| n->value_sizes[i]> BPTREE_MAX_VALUE_SIZE
 			|| n->key_sizes[i]< -1
 			|| n->value_sizes[i] < -1)
 			return 0;

@@ -142,8 +142,8 @@ typedef struct tr_submit_msg_t {
 #define TR_SUBMIT_MSG_RS_HASH(m) ((flat_key_hash*)m->data)
 #define TR_SUBMIT_MSG_WS_HASH(m) ((flat_key_hash*)&m->data[t->readset_count * sizeof(flat_key_hash)])
 
-#define TR_MAX_MSG_SIZE 8192
-#define TR_MAX_DATA_SIZE (TR_MAX_MSG_SIZE - sizeof(tr_submit_msg))
+//#define TR_MAX_MSG_SIZE 8192
+//#define TR_MAX_DATA_SIZE (TR_MAX_MSG_SIZE - sizeof(tr_submit_msg))
 
 
 typedef struct join_msg_t {
@@ -169,7 +169,7 @@ typedef struct tr_deliver_msg_t {
     char data[0];
 } tr_deliver_msg;
 
-#define DL_MAX_DATA_SIZE 8192
+//#define DL_MAX_DATA_SIZE 8192
 
 
 /*** LOGGING MACROS ***/

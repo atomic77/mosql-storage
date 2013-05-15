@@ -19,6 +19,7 @@
 #include <event2/bufferevent.h>
 #include <event2/event_struct.h>
 #include <event2/event_compat.h>
+#include <libpaxos.h>
 
 typedef struct get_request_t {
 	int id;
@@ -35,9 +36,8 @@ static struct hashtable* requests;
 
 static int recv_sock;
 static int send_sock;
-#define buffer_size MAX_TRANSACTION_SIZE
-static char send_buffer[buffer_size];
-static char recv_buffer[buffer_size];
+static char send_buffer[MAX_TRANSACTION_SIZE];
+static char recv_buffer[MAX_TRANSACTION_SIZE];
 static struct event read_ev;
 // We have a rec node per acceptor, but we shouldn't assume that
 // there are only three
