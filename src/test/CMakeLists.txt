@@ -1,7 +1,7 @@
 include_directories(${CMAKE_SOURCE_DIR}/util)
 include_directories(${CMAKE_SOURCE_DIR}/libtapioca)
 
-set(SOURCE_FILES example.c pop.c trace.c process_trace.c) # s.cpp sample-stats.cpp trace_stats.cpp)
+set(SOURCE_FILES tstlrg.c example.c pop.c trace.c process_trace.c) # s.cpp sample-stats.cpp trace_stats.cpp)
 
 foreach(p ${SOURCE_FILES})
 	get_filename_component(target "${p}" NAME_WE)
