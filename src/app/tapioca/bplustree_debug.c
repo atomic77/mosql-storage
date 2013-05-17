@@ -256,8 +256,11 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	unsigned char k[BPTREE_MAX_VALUE_SIZE], v[BPTREE_MAX_VALUE_SIZE];
 	char uuid_out[40];
 	char s1[512];
-	printf("Dumping bpt_id %d:\n",bps->bpt_id);
-	fflush(stdout);
+	char path[128];
+    sprintf(path, "/tmp/%d.out", bps->bpt_id);
+    FILE *fp = fopen(path,"w");
+	//printf("Dumping bpt_id %d:\n",bps->bpt_id);
+	//fflush(stdout);
 	if (!uuid_is_null(failed_node))
 	{
 		bps->cursor_node = read_node(bps, failed_node, &rv);
@@ -275,14 +278,14 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	{
 		bptree_key_value_to_string(bps, k,v,ksize,vsize,s1);
 		uuid_unparse(bps->cursor_node->self_key,uuid_out);
-		printf("Node->Cell %s -> %d \t Key: %s \n",
+		fprintf(fp, "Node->Cell %s -> %d \t Key: %s \n",
 				uuid_out, bps->cursor_pos, s1);
 		rv = bptree_index_next(bps, k, &ksize, v, &vsize);
 		if (rv != BPTREE_OP_KEY_FOUND) break;
 	}
 	if (rv == BPTREE_OP_EOF)
 	{
-		printf("\n\n");
+		fprintf(fp, "\n\n");
 		fflush(stdout);
 	}
 	else if (rv == BPTREE_OP_TAPIOCA_NOT_READY)
@@ -290,6 +293,8 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 		uuid_copy(failed_node, bps->cursor_node->self_key);
 	}
 	return rv;
+	fflush(fp);
+	fclose(fp);
 }
 
 /*
@@ -485,6 +490,7 @@ int output_bptree(bptree_session *bps, int i ) {
     fprintf(fp, "\n\n } \n\n");
 
     fclose(fp);
+	fflush(fp);
     return rv;
 }
 
