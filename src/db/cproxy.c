@@ -85,15 +85,12 @@ static struct bufferevent* cm_connect(struct event_base* b,
 		bufferevent_free(bev);
 		return NULL;
 	}
-	//event_base_dispatch(b);
 	return bev;
 }
 
 int cproxy_init(const char* paxos_config, struct event_base *b) {
 	struct learner *l;
 	ST = 0;
-// 	cert_sock = udp_socket_connect(LeaderIP, LeaderPort);
-// 	socket_make_non_block(cert_sock);
 	base = b; 
 	cert_bev = cm_connect(base, LeaderIP, LeaderPort);
 	assert(cert_bev != NULL);
@@ -125,8 +122,6 @@ int cproxy_submit_join(int id, char* address, int port) {
 	strncpy(j.address, address, 17);
 	
 	bufferevent_write(cert_bev, &j, sizeof(join_msg));
-	
-// 	rv = send(cert_sock, &j, sizeof(join_msg), 0);
 	return rv == 0;
 }
 
@@ -137,7 +132,6 @@ int cproxy_current_st() {
 
 
 void cproxy_cleanup() {
-// 	close(cert_sock);
 	bufferevent_free(cert_bev);
 	print_stats();
 }
