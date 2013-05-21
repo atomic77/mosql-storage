@@ -49,6 +49,13 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
+	
+	if (root->leaf && root->key_count == 0)
+	{
+		// Btree is empty
+		printf("Empty tree\n");
+		return BPTREE_OP_SUCCESS;
+	}
 
 	switch (debug_opt) {
 		case BPTREE_DEBUG_VERIFY_SEQUENTIALLY:
@@ -358,8 +365,9 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 				get_key_val_from_node(n,c, &kv_out);
 				bptree_key_value_to_string_kv(bps, &kv_out, s1);
 				uuid_unparse(n->self_key,uuid_out);
+				fprintf(fp,"%d",level);
 				for (i = 0 ; i<level; i++) fprintf(fp, "-");
-				fprintf(fp, " Inner Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
+				fprintf(fp, " Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
 						uuid_out, c, s1, child->key_count);
 			}
 			kv = verify_bptree_recursive_read(bps, child, dump_to_text,fp, level+1, &rv2);
@@ -400,6 +408,18 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 		copy_key_val(subtree_max, &loc_max);
 		if (dump_to_text)
 		{
+			int c;
+			for (c = 0; c < n->key_count; c++) {
+				int i;
+				bptree_key_val kv_out;
+				get_key_val_from_node(n,c, &kv_out);
+				bptree_key_value_to_string_kv(bps, &kv_out, s1);
+				uuid_unparse(n->self_key,uuid_out);
+				fprintf(fp,"%d",level);
+				for (i = 0 ; i<level; i++) fprintf(fp, "-");
+				fprintf(fp, " Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
+						uuid_out, c, s1, 0);
+			}
 			// Don't dump the leaf nodes for now, we have them sequentially */
 			//bptree_key_value_to_string_kv(bps, loc, s1);
 			//uuid_unparse(bps->cursor_node->self_key,uuid_out);
