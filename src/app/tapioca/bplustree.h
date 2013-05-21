@@ -23,7 +23,7 @@
 
 #include <libpaxos.h>
 
-#define BPTREE_MIN_DEGREE 9
+#define BPTREE_MIN_DEGREE 5 
 #define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
 #define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
 
