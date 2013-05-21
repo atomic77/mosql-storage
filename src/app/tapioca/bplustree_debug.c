@@ -6,6 +6,8 @@
 #include "bplustree.h"
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 
 //int bptree_sequential_read_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
@@ -21,7 +23,7 @@ int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node);
 int verify_bptree_sequential(bptree_session *bps, uuid_t failed_node);
 bptree_key_val *
-	verify_bptree_recursive_read(bptree_session *bps,bptree_node *n, int *rv);
+	verify_bptree_recursive_read(bptree_session* bps, bptree_node* n, int dump_to_text, FILE* fp, int level, int* rv);
 
 //int verify_bptree_order_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
 //		bptree_node *n, char *largest);
@@ -42,6 +44,7 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 	bptree_node *root;
 	bptree_key_val *kvmax;
 	char s1[512];
+	FILE *fp;
 	memset(&kvmax,'\0',sizeof(bptree_key_val));
 
 	rv = bptree_read_root(bps, &bpm, &root);
@@ -56,8 +59,24 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 				bps->eof = 0;
 			}
 			break;
+		case BPTREE_DEBUG_DUMP_RECURSIVELY:
+			sprintf(s1, "/tmp/%d-recursive.out", bps->bpt_id);
+			fp = fopen(s1,"w");
+			kvmax = verify_bptree_recursive_read(bps,root,1, fp,0, &rv);
+			if (rv == BPTREE_OP_SUCCESS) {
+				bptree_key_value_to_string_kv(bps, kvmax, s1);
+				printf("Largest key found: %s \n",s1);
+				fflush(stdout);
+				bps->eof = 0;
+			} else if(rv == 0) {
+				printf("Recursive check failed!\n");
+				fflush(stdout);
+			}
+			fflush(fp);
+			fclose(fp);
+			break;
 		case BPTREE_DEBUG_VERIFY_RECURSIVELY:
-			kvmax = verify_bptree_recursive_read(bps,root,&rv);
+			kvmax = verify_bptree_recursive_read(bps,root,0, NULL,0, &rv);
 			if (rv == BPTREE_OP_SUCCESS) {
 				bptree_key_value_to_string_kv(bps, kvmax, s1);
 				printf("Largest key found: %s \n",s1);
@@ -68,10 +87,10 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 				fflush(stdout);
 			}
 			break;
-		case BPTREE_DEBUG_DUMP_SEQUENTIAL:
+		case BPTREE_DEBUG_DUMP_SEQUENTIALLY:
 			rv = dump_bptree_sequential(bps, data);
 			break;
-		case BPTREE_DEBUG_DUMP_RECURSIVE:
+		case BPTREE_DEBUG_DUMP_GRAPHVIZ:
 			rv = output_bptree(bps,1);
 			if(rv == BPTREE_OP_SUCCESS) fflush(stdout);
 			break;
@@ -303,11 +322,11 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 //int
 bptree_key_val *
 verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
-		int *rv)
+		int dump_to_text, FILE *fp, int level, int *rv)
 {
 	int c, rv2, invalid = 1;
 	bptree_key_val loc_max;
-	char s1[512], s2[512];
+	char s1[512], s2[512], uuid_out[40];
 	bptree_key_val *subtree_max = malloc(sizeof(bptree_key_val));
 
 	get_key_val_from_node(n,n->key_count-1, &loc_max);
@@ -332,7 +351,18 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 				return NULL;
 			}
 			assert_parent_child(bps, n, child );
-			kv = verify_bptree_recursive_read(bps, child, &rv2);
+			if (dump_to_text && c < n->key_count)
+			{
+				int i;
+				bptree_key_val kv_out;
+				get_key_val_from_node(n,c, &kv_out);
+				bptree_key_value_to_string_kv(bps, &kv_out, s1);
+				uuid_unparse(n->self_key,uuid_out);
+				for (i = 0 ; i<level; i++) fprintf(fp, "-");
+				fprintf(fp, " Inner Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
+						uuid_out, c, s1, child->key_count);
+			}
+			kv = verify_bptree_recursive_read(bps, child, dump_to_text,fp, level+1, &rv2);
 			if (rv2 != BPTREE_OP_SUCCESS)
 			{
 				*rv = rv2;
@@ -368,6 +398,14 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 	}
 	else {
 		copy_key_val(subtree_max, &loc_max);
+		if (dump_to_text)
+		{
+			// Don't dump the leaf nodes for now, we have them sequentially */
+			//bptree_key_value_to_string_kv(bps, loc, s1);
+			//uuid_unparse(bps->cursor_node->self_key,uuid_out);
+			//fprintf(fp, "Leaf  Node->Cell %s -> %d \t Key: %s \n",
+					//uuid_out, bps->cursor_pos, s1);
+		}
 	}
 	*rv = BPTREE_OP_SUCCESS;
 	return subtree_max;
@@ -448,11 +486,13 @@ int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 							uuid_out, *nodes);
 					return rv;
 				}
+#ifdef PARANOID_MODE
 				if(uuid_compare(n->self_key, child->parent) != 0)
 				{
 					printf("Misalignment of parent-child in tree!\n");
 					return BPTREE_OP_TREE_ERROR;
 				}
+#endif
 
 				(*nodes)++;
 				rv= bptree_index_scan_recursive(bps,child,

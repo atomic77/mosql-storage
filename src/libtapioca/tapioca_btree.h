@@ -34,9 +34,10 @@ enum bptree_debug_option
 	/* Recurse to first element; then read tree using next() */
 	BPTREE_DEBUG_VERIFY_SEQUENTIALLY=0,
 	BPTREE_DEBUG_VERIFY_RECURSIVELY=1,  /* Traverse tree recursively */
-	BPTREE_DEBUG_DUMP_SEQUENTIAL=2, /* _next() based dump of tree */
-	BPTREE_DEBUG_DUMP_RECURSIVE=3, /* recursive traversal of tree */
-	BPTREE_DEBUG_INDEX_RECURSIVE_SCAN=4 /* multi-node compatible recurs. scan*/
+	BPTREE_DEBUG_DUMP_SEQUENTIALLY=2, /* _next() based dump of tree */
+	BPTREE_DEBUG_DUMP_RECURSIVELY=3, /* recursive traversal of tree */
+	BPTREE_DEBUG_INDEX_RECURSIVE_SCAN=4, /* multi-node compatible recurs. scan*/
+	BPTREE_DEBUG_DUMP_GRAPHVIZ=5 /* Dump graphviz-viewable tree*/
 };
 
 enum bptree_field_comparator {
