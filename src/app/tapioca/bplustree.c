@@ -31,8 +31,8 @@ static int bptree_update_recursive(bptree_session *bps,
 static int bptree_index_first_recursive(
 		bptree_session *bps, void *k, int32_t *ksize, void *v, int32_t *vsize,
 		bptree_node *n);
-static int bptree_delete_recursive(bptree_session *bps,
-		bptree_node* x, void *k, int32_t ksize, void *v, int32_t vsize);
+static int 
+bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv);
 static int bptree_split_child(bptree_session *bps,
 		bptree_node* x, int i, bptree_node* y, int lvl);
 static int node_is_full(bptree_node * n);
@@ -306,19 +306,24 @@ int bptree_delete(bptree_session *bps, void *k,
 
 	bptree_node *root;
 	bptree_meta_node *bpm;
+	bptree_key_val kv;
+	kv.k = k;
+	kv.v = v;
+	kv.ksize = ksize;
+	kv.vsize = vsize;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
-	rv = bptree_delete_recursive(bps, root, k, ksize, v, vsize);
+	rv = bptree_delete_recursive(bps, root, &kv);
 
 	free_node(&root);
 	free_meta_node(&bpm);
 	return rv;
 }
 
-static int bptree_delete_recursive(bptree_session *bps,
-		bptree_node* x, void *k, int32_t ksize, void *v, int32_t vsize)
+static int 
+bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 {
 	int i,rv;
 
@@ -327,13 +332,11 @@ static int bptree_delete_recursive(bptree_session *bps,
 	assert(are_key_and_value_sizes_valid(x));
 #endif
 
-	i = x->key_count - 1;
+	i = find_key_position_in_node(bps, x, kv);
+	
 	if (x->leaf)
 	{
-		while (i > 0 && bptree_compar(bps, k, x->keys[i], v,
-				x->values[i],vsize,x->value_sizes[i] ) < 0) i--;
-		if (bptree_compar(bps, x->keys[i], k, x->values[i],
-				v, x->value_sizes[i], vsize) != 0 )
+		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 )
 		{
 			// Key was not found where it should have been; do nothing
 			return BPTREE_OP_KEY_NOT_FOUND;
@@ -346,16 +349,19 @@ static int bptree_delete_recursive(bptree_session *bps,
 	{
 		bptree_node *n;
 
-		while (i >= 0 && bptree_compar(bps, k, x->keys[i], v,
-					x->values[i],vsize,x->value_sizes[i] ) < 0) i--;
-
-		i++;
-
 		n = read_node(bps, x->children[i], &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
 		assert_parent_child(bps, x,n);
+		// This should probably be an assertion..
+		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 ) 
+		{
+			// TODO Do we need to de-activate inner nodes?
+			//x->active[i] = 0; 
+			// 
+			
+		}
 
-		rv = bptree_delete_recursive(bps, n, k, ksize, v, vsize);
+		rv = bptree_delete_recursive(bps, n, kv);
 		free_node(&n);
 		return rv;
 	}
@@ -561,8 +567,13 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	kv.v = v;
 	kv.ksize = ksize;
 	kv.vsize = vsize;
+	
+	if (rv == BPTREE_OP_KEY_FOUND 
+		&& insert_flags == BPTREE_INSERT_UNIQUE_KEY)
+		return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 
-	if(rv != BPTREE_OP_KEY_NOT_FOUND) return rv;
+	if(! (rv == BPTREE_OP_KEY_NOT_FOUND ||
+		rv == BPTREE_OP_KEY_FOUND)) return rv;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
@@ -591,7 +602,15 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	}
 	free_node(&root);
 	free_meta_node(&bpm);
-	assert(rv != BPTREE_OP_TAPIOCA_NOT_READY);
+	//assert(rv != BPTREE_OP_TAPIOCA_NOT_READY);
+	if (rv != BPTREE_OP_TAPIOCA_NOT_READY) 
+	{
+		// Since we search the whole insert path before, we should have this
+		// situation arise; but if it does, we will have corrupted the
+		// state of the tree
+		return BPTREE_OP_RETRY_NEEDED;
+	}
+		
 	assert(rv == BPTREE_OP_SUCCESS || rv == BPTREE_ERR_DUPLICATE_KEY_INSERTED);
 	return rv;
 
@@ -923,7 +942,6 @@ static int bptree_insert_nonfull(bptree_session *bps,
 #else
 		assert(is_valid_traversal(bps, x,n,pos));
 #endif
-//		assert_parent_child(bps, x,n);
 
 		if (node_is_full(n))
 		{
