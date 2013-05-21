@@ -21,7 +21,7 @@ launch_acceptors() {
 		else 
 			$cmd &
 		fi
-		sleep 0.4
+		sleep 0.1
 	done
 }
 
