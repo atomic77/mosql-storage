@@ -557,15 +557,6 @@ static void handle_mget_put(tcp_client* c, struct evbuffer* buffer) {
 	evtimer_add(&c->timeout_ev, &commit_timeout);
 }
 
-
-static void send_btree_search_result(struct bufferevent* bev, int res, long v) {
-	int size = sizeof(long);
-	bufferevent_write(bev, &size, sizeof(int));
-	bufferevent_write(bev, &res, sizeof(int));
-	bufferevent_write(bev, &v, sizeof(long));
-}
-
-
 static void send_result(struct bufferevent* bev, int res) {
 	int size = 0;
 	bufferevent_write(bev, &size, sizeof(int));
@@ -820,6 +811,7 @@ retrieve_bptree_session(tcp_client* c, struct evbuffer *buffer)
 	if (bps == NULL) {
 		printf("Failed to find session %d:%d!\n", c_b.id, c_b.bpt_id);
 	}
+	assert(bps != NULL);
 	return bps;
 }
 
@@ -895,6 +887,7 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 		fflush(stdout);
 		rv = -1;
 		evbuffer_drain(b,evbuffer_get_length(b));
+		assert(1 == 0xBEEFCAFE);
 	}
 	else
 	{
@@ -906,13 +899,11 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 
 		rv = bptree_insert(bps,k,ksize,v,vsize,insert_flags);
 
-		if (rv == BPTREE_OP_TAPIOCA_NOT_READY)
-		{
-			int debugMe = 123123;
-			// This should no longer happen
-			return;
-		}
+		evbuffer_free(b);
+		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
+		evbuffer_drain(buffer, evbuffer_get_length(buffer));
 		c->write_count++;
+		send_result(c->buffer_ev, rv);
 
 #ifdef TRACE_MODE
 		c->kv_prev.k = malloc(ksize);
@@ -924,9 +915,6 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 #endif
 
 	}
-	evbuffer_free(b);
-	evbuffer_drain(buffer, evbuffer_get_length(buffer));
-	send_result(c->buffer_ev, rv);
 
 }
 
@@ -1060,11 +1048,12 @@ static void handle_bptree_search(tcp_client* c,struct evbuffer* buffer)
 		evbuffer_remove(b,k, ksize);
 
 		rv = bptree_search(bps,k,ksize,v,&vsize);
-		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
 
 		evbuffer_free(b);
-		evbuffer_drain(buffer, evbuffer_get_length(buffer));
+		
+		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
 
+		evbuffer_drain(buffer, evbuffer_get_length(buffer));
 		send_bptree_result(c,rv,vsize,(void *)v);
 	}
 

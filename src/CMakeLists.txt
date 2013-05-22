@@ -14,6 +14,8 @@ if(NOT APPLE)
 	set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} m rt pthread)
 endif()
 
+SET (CMAKE_C_FLAGS_DEBUG " -g3 ")
+
 add_subdirectory(util)
 add_subdirectory(db)
 add_subdirectory(libtapioca)
