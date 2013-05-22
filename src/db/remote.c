@@ -73,17 +73,22 @@ static unsigned int hash_from_key(void* k);
 static void
 on_rec_read(struct bufferevent* bev, void* arg) {
 	int n;
-	size_t len;
+	size_t blen, dlen;
 	struct sockaddr_in addr;
 	socklen_t addr_len;
 	remote_message* rm;
 	struct evbuffer *b;
 	
+	// Check that we have all the data
 	b = bufferevent_get_input(bev);
-	len = evbuffer_get_length(b);
-	assert (len > 0 && len < MAX_TRANSACTION_SIZE); // some arbitrary large # for now
-
-	evbuffer_remove(b, recv_buffer, len); 
+	if(evbuffer_get_length(b) < sizeof(size_t)) return;
+	
+	evbuffer_copyout(b, &dlen, sizeof(size_t));
+	blen = evbuffer_get_length(b);
+	if (blen < dlen + sizeof(size_t)) return;
+	
+	evbuffer_remove(b, &dlen, sizeof(size_t));
+	evbuffer_remove(b, recv_buffer, blen); 
 
 	rm = (remote_message*)recv_buffer;
 	// FIXME We are getting the vrong message type here on recovery
@@ -122,7 +127,7 @@ static struct bufferevent* rec_connect(struct event_base* b,
 		bufferevent_free(bev);
 		return NULL;
 	}
-	//event_base_dispatch(b);
+	
 	return bev;
 }
 
@@ -235,7 +240,7 @@ static void on_read(int fd, short ev, void* arg) {
         break;
 		// We will no longer receive rec_key_reply msgs over UDP
 		case REC_KEY_REPLY:
-		handle_rec_key_reply(rm);
+		assert(1 == 0);
 		break;
 		default:
 		printf("Unknown message type %d\n", rm->type);
@@ -296,17 +301,7 @@ static int send_rec_key_msg(key* k, rec_key_msg* msg) {
 	//last_rec = (last_rec + 1) % num_recs;
 	last_rec = 0; // always use the first one
 	
-//	socket_set_address(&addr, peer_address(p), peer_port(p));
-//	
 	size = (sizeof(rec_key_msg) + msg->ksize);
-//	
-//	rv = sendto(send_sock,
-//		   		msg,
-//		   		size,
-//		   		0,
-//		   		(struct sockaddr*)&addr, 
-//		   		sizeof(addr));
-//	
 	bev = acc_bevs[last_rec];
 	bufferevent_write(bev,msg,size);
 	return rv;	

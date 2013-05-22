@@ -13,12 +13,6 @@
 int file_opened =0;
 FILE *trace_fp;
 
-//#include "../tests/bptree_test_base.h"
-
-//static long bptree_key = 0;
-//
-//static int execution_id = 1;
-
 static char uudbg[40];
 
 static int bptree_search_recursive(bptree_session *bps,
@@ -106,7 +100,7 @@ int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 	printf("No-commit connection to b+tree id %d client id %d exec %d\n",
 			bpt_id, bps->tapioca_client_id, bps->execution_id);
 	fflush(stdout);
-#ifdef DEFENSIVE_MODE
+#ifdef DISABLED_______DEFENSIVE_MODE
 	bptree_node *root;
 	root = read_node(bps, bpm->root_key, &rv);
 	if(rv != BPTREE_OP_NODE_FOUND) return rv;
@@ -353,14 +347,14 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
 		assert_parent_child(bps, x,n);
 		// This should probably be an assertion..
-		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 ) 
-		{
-			// TODO Do we need to de-activate inner nodes?
-			//x->active[i] = 0; 
-			// 
-			
-		}
-
+// 		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 ) 
+// 		{
+// 			// TODO Do we need to de-activate inner nodes?
+// 			x->active[i] = 0; 
+// 			 
+// 			
+// 		}
+// 
 		rv = bptree_delete_recursive(bps, n, kv);
 		free_node(&n);
 		return rv;
@@ -603,7 +597,7 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	free_node(&root);
 	free_meta_node(&bpm);
 	//assert(rv != BPTREE_OP_TAPIOCA_NOT_READY);
-	if (rv != BPTREE_OP_TAPIOCA_NOT_READY) 
+	if (rv == BPTREE_OP_TAPIOCA_NOT_READY) 
 	{
 		// Since we search the whole insert path before, we should have this
 		// situation arise; but if it does, we will have corrupted the
