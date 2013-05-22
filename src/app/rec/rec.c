@@ -81,8 +81,6 @@ static void index_entry_print(key* k, off_t off) {
 static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* reply) {
 	int i, offset;
 	flat_key_val* kv;
-//	tr_deliver_msg* dmsg;
-//	dmsg = (tr_deliver_msg*)rec->cmd_value;
 
 	offset = (dmsg->aborted_count + dmsg->committed_count) * sizeof(tr_id);
 
@@ -97,7 +95,6 @@ static void prepare_reply_data(key* k, tr_deliver_msg* dmsg, rec_key_reply* repl
 	}
 }
 
-
 static rec_key_reply * handle_rec_key(rec_key_msg *rm) {
 	key k;
 	iid_t iid;
@@ -108,12 +105,12 @@ static rec_key_reply * handle_rec_key(rec_key_msg *rm) {
 	
 	rep = (rec_key_reply*)send_buffer;
 	
-//	print_rec_key_msg(rm, size);
-	
 	// Lookup the index
 	k.size = rm->ksize;
 	k.data = rm->data;
+	rlog_tx_begin(rl);
 	iid = rlog_read(rl, &k);
+	rlog_tx_commit(rl);
 	if (iid > 0) {
 		index_entry_print(&k, iid);
 		storage_tx_begin(ssm);
@@ -129,12 +126,6 @@ static rec_key_reply * handle_rec_key(rec_key_msg *rm) {
 			assert(11337 == 0xDBCAFE);
 		}
 		dmsg = (tr_deliver_msg *)ar->value;
-/*		rec = (accept_ack *) malloc(ACCEPT_ACK_SIZE(ar) + sizeof(paxos_msg));
-		rec-> = ir->inst_number;
-		rec->ballot = ir->accept_ballot;
-		rec->cmd_key = ir->accepted_cmd_key;
-		rec->cmd_size = ir->accepted_cmd_size;
-		memcpy(rec->value, ar->value, ir->value_size);*/
 
 		rep->type = REC_KEY_REPLY;
 		rep->req_id = rm->req_id;
@@ -173,12 +164,11 @@ void update_rec_index(iid_t iid, tr_deliver_msg* dmsg)
 		k.size = kv->ksize;
 		k.data = kv->data;
 //		if (key_belongs_here(&k)) {
+			rlog_tx_begin(rl);
 			rlog_update(rl, &k, iid);
+			rlog_tx_commit(rl);
 //		}
 		byte += FLAT_KEY_VAL_SIZE(kv);
-		if ( (rec_key_count + 1) % rec_fsync_interval == 0){
-			rlog_sync(rl);
-		}
 	}
 }
 
@@ -221,8 +211,6 @@ void reload_keys() {
 	n = 0;
 	for(;;)
 	{
-//		rv = plog_next(pl, &m, &iid);
-//		dmsg = (tr_deliver_msg *)m->cmd_value;
 		update_rec_index(iid, dmsg);
 		n++;
 		if(iid == -1) break;
@@ -256,6 +244,8 @@ static void on_rec_request(struct bufferevent* bev, void* arg)
 	evbuffer_remove(b, recv_buffer, sizeof(rec_key_msg) + rm.ksize); 
 
 	rep = handle_rec_key((rec_key_msg *)recv_buffer);
+	len = rep->size + sizeof(rec_key_reply);
+	bufferevent_write(bev,&len , sizeof(size_t));
 	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
 }
 

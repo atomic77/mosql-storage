@@ -12,6 +12,7 @@ typedef struct rlog_t {
 //	int log_fd;
 	DB *dbp;
 	DB_ENV *dbenv;
+	DB_TXN* txn;
 	size_t record_size;
 	DBC *db_cur;
 	int cur_enabled;
@@ -20,6 +21,8 @@ typedef struct rlog_t {
 rlog * rlog_init(const char *path);
 iid_t rlog_read(rlog *r, key* k) ;
 void rlog_update(rlog *r, key* k, iid_t iid) ;
+void rlog_tx_begin(rlog *r);
+void rlog_tx_commit(rlog *r);
 int rlog_num_keys();
 
 #endif

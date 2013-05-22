@@ -16,17 +16,13 @@ struct __attribute__ ((packed)) index_entry {
 };
 
 
-//static struct index_entry* index_entry_new(key* k, off_t off);
-//static unsigned int hash_from_key(struct index_entry* k1);
 static int equal_keys(struct index_entry* k1, struct index_entry* k2);
-
 
 KHASH_INIT(index, struct index_entry*, char, 0, hash_from_key, equal_keys)
 
-
 static khash_t(index)* ht;
 #define KHASH_INIT_SIZE  10000 // 50000000
-
+#define MEM_CACHE_SIZE (0), (32*1024*1024)
 
 void rlog_sync(rlog* r);
 
@@ -51,14 +47,11 @@ rlog * rlog_init(const char *path) {
 			* also turns on logging. */
       DB_INIT_MPOOL |  /* Initialize the memory pool (in-memory cache) */
       DB_REGISTER	|
-     // DB_THREAD	|
-//      DB_AUTO_COMMIT |
-      DB_TXN_NOSYNC ;
-//      DB_THREAD;       /* Cause the environment to be free-threaded */
+      DB_THREAD	|  /* Cause the environment to be free-threaded */
+      DB_TXN_WRITE_NOSYNC ;
 
     open_flags =
-    		DB_CREATE |
-    		DB_AUTO_COMMIT;
+    		DB_CREATE;//  | DB_AUTO_COMMIT;
 			
 	rv = db_env_create(&r->dbenv, 0);
 	if (rv != 0) {
@@ -69,7 +62,6 @@ rlog * rlog_init(const char *path) {
 
 	struct stat sb;
 	int dir_exists = (stat(path, &sb) == 0);
-// 	int db_exists = (stat(db_file_path, &sb) == 0);
 
 	// TODO Include recovery part here for rlog
 	
@@ -78,6 +70,13 @@ rlog * rlog_init(const char *path) {
 		return NULL;
 	} 
     
+	//Set the size of the memory cache
+	rv = r->dbenv->set_cachesize(r->dbenv, MEM_CACHE_SIZE, 1);
+	if (rv != 0) {
+		printf("DB_ENV set_cachesize failed: %s\n", db_strerror(rv));
+		return -1;
+	}
+	
     sprintf(log_path, "%s/", path);
     sprintf(db_path, "%s/rec.db", path);
     rv = r->dbenv->open(r->dbenv, log_path, env_flags, 0);
@@ -94,9 +93,10 @@ rlog * rlog_init(const char *path) {
     	goto err;
     }
 
-//    rv = r->dbp->set_cachesize(r->dbp, 0, 50*1024*1024, 0);
+    rlog_tx_begin(r);
+	
     rv = r->dbp->open(r->dbp,        /* Pointer to the database */
-		    NULL,       /* Txn pointer */
+		    r->txn,       /* Txn pointer */
 		    db_path,  /* File name */
 		    NULL,       /* Logical db name */
 		    DB_BTREE,   /* Database type (using btree) */
@@ -106,6 +106,9 @@ rlog * rlog_init(const char *path) {
     	r->dbp->err(r->dbp, rv, "RIDX: Database '%s' open failed.", path);
     	return NULL;
     }
+    
+    rlog_tx_commit(r);
+    
     return r;
 
 
@@ -130,6 +133,21 @@ err:
 }
 
 
+void rlog_tx_begin(rlog *r)
+{
+	int rv;
+	rv = r->dbenv->txn_begin(r->dbenv, NULL, &r->txn, 0);
+	assert(rv == 0);	
+}
+
+void rlog_tx_commit(rlog *r)
+{
+	int rv;
+	rv = r->txn->commit(r->txn, 0);
+	assert(rv == 0);
+}
+
+
 /*@
  * Retrieve iid instance for tapioca key k
  */
@@ -142,10 +160,13 @@ iid_t rlog_read(rlog *r, key* k) {
 
     _k.data = k->data;
     _k.size = k->size;
+	_v.data = &inst;
+	_v.ulen = sizeof(iid_t);
+	_v.flags = DB_DBT_USERMEM;
 
-	rv = r->dbp->get(r->dbp, NULL, &_k, &_v, 0);
+	rv = r->dbp->get(r->dbp, r->txn, &_k, &_v, 0);
 
-	if (rv == DB_NOTFOUND) return 0;
+	if (rv == DB_NOTFOUND || rv == DB_KEYEMPTY) return 0;
 	if (rv != 0)
 	{
     	r->dbp->err(r->dbp, rv, " get failed on db with error");
@@ -161,7 +182,6 @@ iid_t rlog_read(rlog *r, key* k) {
 
 void rlog_update(rlog *r, key* k, iid_t iid) {
 	int rv;
-	iid_t inst;
     DBT _k, _v;
     memset(&_k, 0, sizeof(DBT));
     memset(&_v, 0, sizeof(DBT));
@@ -172,8 +192,7 @@ void rlog_update(rlog *r, key* k, iid_t iid) {
 	_v.data = &iid;
     _v.size = sizeof(iid_t);
 
-//    printf("RLOG: Putting key size %d to iid %d\n", k->size, iid);
-	rv = r->dbp->put(r->dbp, 0, &_k, &_v, 0);
+	rv = r->dbp->put(r->dbp, r->txn, &_k, &_v, 0);
 	assert(rv == 0);
 
 }
