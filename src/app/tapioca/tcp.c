@@ -804,6 +804,9 @@ retrieve_bptree_session(tcp_client* c, struct evbuffer *buffer)
 	bptree_session *bps;
 	client_bpt_id c_b;
 	c_b.id = c->id;
+	// FIXME In some cases this is failing, we are not ensuring that
+	// libevent has already sent out bpt info!
+	assert(evbuffer_get_length(buffer) >= sizeof(uint16_t));
 	evbuffer_remove(buffer,&c_b.bpt_id, sizeof(uint16_t));
 	bps = hashtable_search(client_bpt_ids, &c_b);
 	if(bps != NULL)
@@ -901,6 +904,9 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 
 		evbuffer_free(b);
 		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
+		if (rv == BPTREE_OP_RETRY_NEEDED) {
+			printf("Insert failed due to unavailable key bpt %d\n",bps->bpt_id);
+		}
 		evbuffer_drain(buffer, evbuffer_get_length(buffer));
 		c->write_count++;
 		send_result(c->buffer_ev, rv);
