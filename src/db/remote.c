@@ -303,7 +303,7 @@ static int send_rec_key_msg(key* k, rec_key_msg* msg) {
 	
 	size = (sizeof(rec_key_msg) + msg->ksize);
 	bev = acc_bevs[last_rec];
-	bufferevent_write(bev,msg,size);
+	rv = bufferevent_write(bev,msg,size);
 	return rv;	
 }
 

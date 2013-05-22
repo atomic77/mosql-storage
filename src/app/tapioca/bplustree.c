@@ -602,7 +602,8 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 		// Since we search the whole insert path before, we should have this
 		// situation arise; but if it does, we will have corrupted the
 		// state of the tree
-		return BPTREE_OP_RETRY_NEEDED;
+		//return BPTREE_OP_RETRY_NEEDED;
+		return BPTREE_OP_TAPIOCA_NOT_READY;
 	}
 		
 	assert(rv == BPTREE_OP_SUCCESS || rv == BPTREE_ERR_DUPLICATE_KEY_INSERTED);
