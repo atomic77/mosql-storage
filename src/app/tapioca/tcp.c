@@ -116,6 +116,8 @@ static unsigned int hash_from_client_bpt_key(void* k);
 
 /* End new B+Tree stuff */
 /********************************************************/
+#define BPTREE_MESSAGE_TYPE_START 14
+#define BPTREE_MESSAGE_TYPE_END 26
 
 typedef void (*handler)(tcp_client* c, struct evbuffer* b);
 static handler handle[] = 
@@ -135,7 +137,7 @@ static handler handle[] =
 	  NULL,
 	  // New B+Tree operations
 	  NULL, // previously used for test_op
-	  handle_bptree_initialize_bpt_session_no_commit,
+	  handle_bptree_initialize_bpt_session_no_commit, /* 14 */
 	  handle_bptree_initialize_bpt_session,
 	  handle_bptree_set_num_fields,
 	  handle_bptree_set_field_info,
@@ -147,7 +149,7 @@ static handler handle[] =
 	  handle_bptree_index_next_mget,
 	  handle_bptree_index_first_no_key,
 	  handle_bptree_debug,
-	  handle_bptree_delete
+	  handle_bptree_delete /* 26 */
 
 	};
 
@@ -225,6 +227,13 @@ static int message_incomplete(struct evbuffer* b) {
 	return 0;
 }
 
+static int bptree_message_incomplete(struct evbuffer *b) {
+	// BTree messages also should contain a bpt_id
+	int bsize = evbuffer_get_length(b);
+	if (bsize < sizeof(uint16_t)) return 1;
+	return 0;
+}
+
 
 static void on_read(struct bufferevent *bev, void *arg)  {
 	int size, type;
@@ -239,6 +248,9 @@ static void on_read(struct bufferevent *bev, void *arg)  {
 	
 	evbuffer_remove(input, &size, sizeof(int));
 	evbuffer_remove(input, &type, sizeof(int));
+	if (type >= BPTREE_MESSAGE_TYPE_START && type <= BPTREE_MESSAGE_TYPE_END){
+		if (bptree_message_incomplete(input)) return;
+	}
 
 	if (type >= (sizeof(handle) / sizeof(handler)) || type < 0) {
 		printf("Error: ignoring message of type %d\n", type);
@@ -710,6 +722,7 @@ static void handle_bptree_initialize_bpt_session_no_commit(tcp_client* c,
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_initialize_bpt_session_no_commit, c);
+	if (bptree_message_incomplete(b)) return;
 
 	c_b->id = c->id;
 	evbuffer_remove(b,&bpt_id, sizeof(uint16_t));
@@ -764,6 +777,7 @@ static void handle_bptree_initialize_bpt_session(tcp_client* c,
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_initialize_bpt_session, c);
+	if (bptree_message_incomplete(b)) return;
 
 	c_b->id = c->id;
 	evbuffer_remove(b,&bpt_id, sizeof(uint16_t));
@@ -882,6 +896,7 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_insert, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if (bps ==  NULL)
@@ -905,7 +920,7 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 		evbuffer_free(b);
 		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
 		if (rv == BPTREE_OP_RETRY_NEEDED) {
-			printf("Insert failed due to unavailable key bpt %d\n",bps->bpt_id);
+			printf("Insert failed due to unavailable key, txn retry needed, bpt %d\n",bps->bpt_id);
 		}
 		evbuffer_drain(buffer, evbuffer_get_length(buffer));
 		c->write_count++;
@@ -936,6 +951,7 @@ static void handle_bptree_update(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_update, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	evbuffer_remove(b,&ksize, sizeof(int32_t));
@@ -963,6 +979,7 @@ static void handle_bptree_delete(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_delete, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	evbuffer_remove(b,&ksize, sizeof(int32_t));
@@ -1041,6 +1058,7 @@ static void handle_bptree_search(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_search, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if(bps == NULL)
@@ -1077,6 +1095,7 @@ static void handle_bptree_index_first(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_index_first, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if (bps == NULL)
@@ -1108,6 +1127,7 @@ static void handle_bptree_index_next(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_index_next, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if (bps == NULL)
@@ -1141,6 +1161,7 @@ static void handle_bptree_index_next_mget(tcp_client* c,struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_index_next_mget, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if (bps == NULL)
@@ -1170,6 +1191,7 @@ static void handle_bptree_index_first_no_key(tcp_client* c,struct evbuffer* buff
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_index_first_no_key, c);
+	if (bptree_message_incomplete(b)) return;
 
 	bps = retrieve_bptree_session(c,b);
 	if (bps == NULL)
@@ -1203,7 +1225,8 @@ static void handle_bptree_debug(tcp_client* c, struct evbuffer* buffer)
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_debug, c);
-
+	if (bptree_message_incomplete(b)) return;
+	
 	bps = retrieve_bptree_session(c,b);
 	if (bps == NULL)
 	{
