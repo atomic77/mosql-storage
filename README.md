@@ -1,7 +1,9 @@
 MoSQL Storage System
 ======================
 
-The MoSQL storage engine for MySQL/MariaDB (mosql-se) requires the mosql-storage system to be running in order to function. The MoSQL storage layer is a fully-functioning transactional key-value system on its own, useful for applications which do not require full-fledged SQL transactions. 
+The MoSQL storage layer (mosql-storage) is a single component of the larger MoSQL system developed at the Unviersity of Lugano. For an overview, please see the [main project home page](http://dslab.inf.usi.ch/mosql/).
+
+The MoSQL storage engine for MySQL/MariaDB (mosql-se) requires (libpaxos)[https://bitbucket.org/sciascid/libpaxos] in order to function. The MoSQL storage layer is a fully-functioning transactional key-value system on its own, useful for applications which do not require full-fledged SQL transactions as provided by the full MoSQL system.
 
 Dependencies
 ------------
