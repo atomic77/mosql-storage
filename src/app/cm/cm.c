@@ -52,7 +52,7 @@ static unsigned char *read_buffer;
 
 static void print_stats();
 
-#define MAX_COMMAND_SIZE 1024 * 1024
+#define MAX_COMMAND_SIZE 256 * 1024
 static struct event_base *base;
 static struct bufferevent *acc_bev;
 static struct event *timeout_ev;
@@ -163,43 +163,49 @@ static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
 
     }
 }
+
+
+
 static void
 on_read(struct bufferevent* bev, void* arg)
 {
 	size_t len, dlen;
 	char *buf;
 	struct evbuffer* b;
-	struct request req;
+	short type;
 	join_msg jmsg;
-	tr_submit_msg *tmsg = malloc(sizeof(tr_submit_msg));
+	tr_submit_msg tmsg;
+	len =0;
+	memset(&tmsg, 0, sizeof(tr_submit_msg));
 	
 	b = bufferevent_get_input(bev);
-	if(evbuffer_get_length(b) < sizeof(struct request)) return;
-	
-	evbuffer_copyout(b, &req, sizeof(struct request));
-	switch (req.type) {
-		case TRANSACTION_SUBMIT:
-			len = evbuffer_get_length(b);
-			if(len < sizeof(tr_submit_msg) ) return;
-			
-			evbuffer_copyout(b, tmsg, sizeof(tr_submit_msg));
-			dlen = TR_SUBMIT_MSG_SIZE(tmsg);
-			free(tmsg); 
-			if (len < dlen) return;
-			
-			evbuffer_remove(b, read_buffer, dlen);
-			validate((tr_submit_msg *) read_buffer);
-			break;
-		case NODE_JOIN:
-			printf("dropping message NODE_JOIN -- to be reimplemented\n");
-			break;  
-		default: 
-			printf("dropping unknown message type %d \n",req.type);
-	}
-	
+	while ((len = evbuffer_get_length(b)) >= sizeof(short)) 
+	{
+		
+		//if(len < sizeof(short)) return;
+		evbuffer_copyout(b, &type, sizeof(short));
+		
+		switch (type) {
+			case TRANSACTION_SUBMIT:
+				if(len < sizeof(tr_submit_msg)) return;
+				
+				evbuffer_copyout(b, &tmsg, sizeof(tr_submit_msg));
+				dlen = TR_SUBMIT_MSG_SIZE((&(tmsg)));
+				if (len < dlen) return;
+				
+				evbuffer_remove(b, read_buffer, dlen);
+				validate((tr_submit_msg *) read_buffer);
+				break;
+			case NODE_JOIN:
+				printf("dropping message NODE_JOIN -- to be reimplemented\n");
+				break;  
+			default: 
+				printf("dropping unknown message type %d \n",type);
+				assert(1);
+		}
+	}	
 			
 }
-
 
 static void
 on_bev_error(struct bufferevent *bev, short events, void *arg)
