@@ -24,5 +24,7 @@ void rlog_update(rlog *r, key* k, iid_t iid) ;
 void rlog_tx_begin(rlog *r);
 void rlog_tx_commit(rlog *r);
 int rlog_num_keys();
+int rlog_next(rlog *r, iid_t *iid, key *k) ;
+void rlog_close(rlog* r);
 
 #endif

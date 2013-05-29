@@ -24,6 +24,8 @@ static khash_t(index)* ht;
 #define KHASH_INIT_SIZE  10000 // 50000000
 #define MEM_CACHE_SIZE (0), (32*1024*1024)
 
+static char read_buffer[PAXOS_MAX_VALUE_SIZE];
+
 void rlog_sync(rlog* r);
 
 /*@
@@ -109,6 +111,7 @@ rlog * rlog_init(const char *path) {
     
     rlog_tx_commit(r);
     
+	memset(read_buffer, 0, PAXOS_MAX_VALUE_SIZE);
     return r;
 
 
@@ -179,6 +182,49 @@ iid_t rlog_read(rlog *r, key* k) {
 	return inst;
 }
 
+int rlog_next(rlog *r, iid_t *iid, key *k) 
+{
+	int rv;
+	DBT dbkey, dbdata;
+	
+	memset(&dbkey, 0, sizeof(DBT));
+	memset(&dbdata, 0, sizeof(DBT));
+	
+	//Data is our buffer
+	dbkey.data = read_buffer;
+	dbkey.ulen = PAXOS_MAX_VALUE_SIZE;
+	dbkey.flags = DB_DBT_USERMEM;
+
+	dbdata.data = iid;
+	dbdata.ulen= sizeof(iid_t);
+	dbdata.flags = DB_DBT_USERMEM;
+    
+	
+	if (r->db_cur == NULL) {
+		rv = r->dbp->cursor(r->dbp, r->txn, &r->db_cur, DB_READ_COMMITTED); 
+		if (rv != 0) {
+			r->dbp->err(r->dbp, rv, "DB->cursor");
+			return -1;
+		}
+	}
+	
+	rv = r->db_cur->get(r->db_cur, &dbkey, &dbdata, DB_NEXT);
+		
+	if (rv ==0) {
+		return 1;
+	}
+	else if (rv == DB_NOTFOUND) 
+	{
+		r->db_cur->close(r->db_cur);
+		r->db_cur = NULL;
+		return 0;
+	} else {
+		r->dbp->err(r->dbp, rv, "DBcursor->get");
+		return -1;
+	}
+	
+	
+}
 
 void rlog_update(rlog *r, key* k, iid_t iid) {
 	int rv;
@@ -221,7 +267,7 @@ void rlog_sync(rlog* r)
 
 void rlog_close(rlog* r)
 {
-	rlog_sync(r);
 	r->dbp->close(r->dbp, 0);
+	r->dbenv->close(r->dbenv, 0);
 }
 

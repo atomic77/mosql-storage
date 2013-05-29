@@ -202,22 +202,6 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 }
 
 
-// TODO Deprecated now that BDB working correctly; may need some variation of
-// this logic for recovery however
-void reload_keys() {
-	int rv, byte, n;
-	iid_t iid;
-	tr_deliver_msg *dmsg;
-	n = 0;
-	for(;;)
-	{
-		update_rec_index(iid, dmsg);
-		n++;
-		if(iid == -1) break;
-	}
-	LOG(VRB, ("PLOG: Loaded %d keys from BDB\n", n));
-}
-
 void sigint(int sig) {
 	printf("IID %lu\n", Iid);
 	printf("Rec key count %d\n", rec_key_count);
