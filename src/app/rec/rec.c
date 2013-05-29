@@ -229,24 +229,24 @@ void sigint(int sig) {
 
 static void on_rec_request(struct bufferevent* bev, void* arg)
 {
-	size_t len;
+	size_t len, rlen;
 	struct evbuffer* b;
 	rec_key_msg rm;
 	rec_key_reply *rep;
 	
 	b = bufferevent_get_input(bev);
-	if(evbuffer_get_length(b) < sizeof(rec_key_msg)) return;
-	
-	evbuffer_copyout(b, &rm, sizeof(rec_key_msg));
-	len = evbuffer_get_length(b);
-	if (len < sizeof(rec_key_msg) + rm.ksize) return;
-	
-	evbuffer_remove(b, recv_buffer, sizeof(rec_key_msg) + rm.ksize); 
+	while((len = evbuffer_get_length(b)) >= sizeof(rec_key_msg)) 
+	{
+		evbuffer_copyout(b, &rm, sizeof(rec_key_msg));
+		if (len < sizeof(rec_key_msg) + rm.ksize) return;
+		
+		evbuffer_remove(b, recv_buffer, sizeof(rec_key_msg) + rm.ksize); 
 
-	rep = handle_rec_key((rec_key_msg *)recv_buffer);
-	len = rep->size + sizeof(rec_key_reply);
-	bufferevent_write(bev,&len , sizeof(size_t));
-	bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
+		rep = handle_rec_key((rec_key_msg *)recv_buffer);
+		rlen = rep->size + sizeof(rec_key_reply);
+		bufferevent_write(bev,&rlen , sizeof(size_t));
+		bufferevent_write(bev, rep, rep->size + sizeof(rec_key_reply));
+	}
 }
 
 

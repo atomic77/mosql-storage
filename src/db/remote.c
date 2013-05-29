@@ -81,19 +81,19 @@ on_rec_read(struct bufferevent* bev, void* arg) {
 	
 	// Check that we have all the data
 	b = bufferevent_get_input(bev);
-	if(evbuffer_get_length(b) < sizeof(size_t)) return;
-	
-	evbuffer_copyout(b, &dlen, sizeof(size_t));
-	blen = evbuffer_get_length(b);
-	if (blen < dlen + sizeof(size_t)) return;
-	
-	evbuffer_remove(b, &dlen, sizeof(size_t));
-	evbuffer_remove(b, recv_buffer, blen); 
+	while((blen = evbuffer_get_length(b)) >= sizeof(size_t)) 
+	{
+		evbuffer_copyout(b, &dlen, sizeof(size_t));
+		if (blen < dlen + sizeof(size_t)) return;
+		
+		evbuffer_remove(b, &dlen, sizeof(size_t));
+		evbuffer_remove(b, recv_buffer, dlen); 
 
-	rm = (remote_message*)recv_buffer;
-	// FIXME We are getting the vrong message type here on recovery
-	assert(rm->type == REC_KEY_REPLY); // nothing else should come this way
-	handle_rec_key_reply(rm);
+		rm = (remote_message*)recv_buffer;
+		// FIXME We are getting the vrong message type here on recovery
+		assert(rm->type == REC_KEY_REPLY); // nothing else should come this way
+		handle_rec_key_reply(rm);
+	}
 	
 }
 
