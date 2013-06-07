@@ -1,22 +1,23 @@
 MoSQL Storage System
 ======================
 
-The MoSQL storage layer (mosql-storage) is a single component of the larger MoSQL system developed at the Unviersity of Lugano. For an overview, please see the [main project home page](http://dslab.inf.usi.ch/mosql/).
+The MoSQL storage layer (mosql-storage) is a single component of the larger MoSQL system developed at the Unviersity of Lugano, now released under the GPL v3. For an overview, please see the [main project home page](http://dslab.inf.usi.ch/mosql/).
 
-The MoSQL storage engine for MySQL/MariaDB (mosql-se) requires (libpaxos)[https://bitbucket.org/sciascid/libpaxos] in order to function. The MoSQL storage layer is a fully-functioning transactional key-value system on its own, useful for applications which do not require full-fledged SQL transactions as provided by the full MoSQL system.
+The MoSQL storage system for MySQL/MariaDB requires [libpaxos] in order to function. The MoSQL storage layer is a fully-functioning transactional key-value system on its own, useful for applications which do not require full-fledged SQL transactions as provided by the full MoSQL system. If you are looking for the MoSQL storage engine you can find it at [mosql-se]. 
 
 Dependencies
 ------------
 
 To build, you will require:
 
-* libpaxos v3 (bitbucket link goes here)
-* BerkeleyDB 5.1 or higher (eg. libdb5.1-dev on ubuntu)
-* libevent 2.0 (libevent-dev on debian/ubuntu)
-* libUUID (uuid-dev on debian/ubuntu, libuuid? on fedora)
+* [libpaxos] 
+* BerkeleyDB 4.8 or higher (eg. libdb5.1-dev on ubuntu, libdb-devel on Fedora/RH)
+* libevent 2.0 (libevent-dev on debian/ubuntu, libevent-devel on Fedora/RH)
+* libUUID (uuid-dev on debian/ubuntu, libuuid-devel on fedora)
 * msgpack (libmsgpack-dev on debian/ubuntu, msgpack-devel? on fedora)
+* Google Profiling tools (gperftools on fedora) -- this is not really required but is currently linked in on Debug builds for testing
 
-It should be possible to get everything working with OSX although the vast majority of our testing happens on linux platforms. 
+It should be possible to get everything working with OSX and possibly even Cygwin although the majority of our testing happens on Linux platforms.
 
 Building
 --------
@@ -130,3 +131,9 @@ Implementing a transaction that retrieve an integer key:
 
 
 See src/test/example.c for an example of a program that uses the C API. A native Java library does exist although is unmaintained -- if it is useful to someone we can make it available.
+
+[mosql-se]: https://bitbucket.org/atomic77/mosql-se
+[mosql-storage]: https://bitbucket.org/atomic77/mosql-storage
+[libpaxos]: https://bitbucket.org/sciascid/libpaxos
+
+
