@@ -21,14 +21,14 @@
 #define _REMOTE_H_
 
 #include "dsmDB_priv.h"
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 #include <event2/event.h>
 
 
 typedef void(*sm_get_cb)(key*, val*, void*);
 
 
-int remote_init(struct config *lp_config, struct event_base *base);
+int remote_init(struct evpaxos_config *lp_config, struct event_base *base);
 
 int remote_cleanup();
 

@@ -38,7 +38,7 @@ static void print_stats();
 static void gc(int fd, short event, void* arg);
 
 
-int sm_init(struct config *lp_config, struct event_base *base) {
+int sm_init(struct evpaxos_config *lp_config, struct event_base *base) {
 	int rv;
 	
 	rv = remote_init(lp_config, base);

@@ -20,7 +20,7 @@
 #include "tapiocadb.h"
 #include "dsmDB_priv.h"
 #include "config_reader.h"
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 #include "sm.h"
 #include "cproxy.h"
 #include "peer.h"
@@ -39,7 +39,7 @@ static const char* tapioca_config;
 static const char* paxos_config;
 static int dump_at_exit = 0;
 static char* dump_path;
-static struct config* lp_config;
+static struct evpaxos_config* lp_config;
 
 static void sigint(int sig) {
 	struct timeval killtime;
