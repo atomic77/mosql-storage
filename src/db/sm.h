@@ -22,9 +22,9 @@
 
 #include "dsmDB_priv.h"
 #include <event2/bufferevent.h>
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 
-int sm_init(struct config *lp_config, struct event_base *base);
+int sm_init(struct evpaxos_config *lp_config, struct event_base *base);
 
 int sm_cleanup();
 

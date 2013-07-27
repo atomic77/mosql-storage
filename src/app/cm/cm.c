@@ -17,7 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 
 #include "config_reader.h"
 #include "dsmDB_priv.h"
@@ -27,7 +27,7 @@
 #include "util.h"
 
 
-#include <libpaxos.h>
+#include <paxos.h>
 #include <libpaxos/libpaxos_messages.h>
 //#include "libpaxos_messages.h"
 #include "msg.h"
@@ -281,22 +281,14 @@ bind_new_listener(struct event_base* b, address* a,
 }
 
 static struct bufferevent*
-proposer_connect(struct event_base* b, address* a) {
-	struct sockaddr_in sin;
+proposer_connect(struct event_base* b, struct sockaddr_in* a) {
 	struct bufferevent* bev;
-	
-	LOG(VRB,("Connecting to proposer %s : %d\n",
-	                a->address_string, a->port));
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(a->address_string);
-	sin.sin_port = htons(a->port);
 	
 	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
 	bufferevent_enable(bev, EV_WRITE);
 	bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
-	struct sockaddr* saddr = (struct sockaddr*)&sin;
-	if (bufferevent_socket_connect(bev, saddr, sizeof(sin)) < 0) {
+	struct sockaddr* saddr = (struct sockaddr*)a;
+	if (bufferevent_socket_connect(bev, saddr, sizeof(saddr)) {
 		bufferevent_free(bev);
 		return NULL;
 	}
@@ -321,7 +313,8 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	base = event_base_new();
 
 	/* Set up connection to proposer */
-	acc_bev =  proposer_connect(base, &conf->proposers[0]);
+	//acc_bev =  proposer_connect(base, &conf->proposers[0]);
+	acc_bev =  proposer_connect(base, evpaxos_proposer_address(conf,0));
 	assert(acc_bev != NULL);
 	
 	read_buffer = malloc(MAX_COMMAND_SIZE);

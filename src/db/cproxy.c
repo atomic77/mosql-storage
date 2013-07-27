@@ -34,7 +34,7 @@
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
-#include <libpaxos/libpaxos.h>
+#include <libpaxos/paxos.h>
 #include <libpaxos/libpaxos_messages.h>
 #include <evpaxos/evpaxos.h>
 

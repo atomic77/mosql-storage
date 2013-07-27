@@ -38,7 +38,7 @@
 #include <event2/bufferevent.h>
 #include <event2/event_struct.h>
 #include <event2/event_compat.h>
-#include <libpaxos.h>
+#include <paxos.h>
 
 typedef struct get_request_t {
 	int id;
@@ -128,14 +128,15 @@ static void on_socket_event(struct bufferevent *bev, short ev, void *arg) {
 }
 
 static struct bufferevent* rec_connect(struct event_base* b, 
-									const char *address, int port) {
+									in_addr_t s_addr, int port) {
+//									const char *address, int port) {
 	struct sockaddr_in sin;
 	struct bufferevent* bev;
 	
-	LOG(VRB,("Connecting to proposer %s : %d\n", address, port));
+	LOG(VRB,("Connecting to proposer %d : %d\n", s_addr, port));
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(address);
+	sin.sin_addr.s_addr = s_addr; // inet_addr(address);
 	sin.sin_port = htons(port);
 	
 	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
@@ -150,7 +151,7 @@ static struct bufferevent* rec_connect(struct event_base* b,
 	return bev;
 }
 
-int remote_init(struct config *lp_config, struct event_base *base) {
+int remote_init(struct evpaxos_config *lp_config, struct event_base *base) {
 	int i;
 	struct peer* p;
 	
@@ -171,8 +172,10 @@ int remote_init(struct config *lp_config, struct event_base *base) {
 	
 	acc_bevs = malloc(num_recs * sizeof(struct bufferevent *));
 	for (i=0; i<num_recs; i++) {
-		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
-			lp_config->acceptors[i].port+100);
+//		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
+//			lp_config->acceptors[i].port+100);
+		acc_bevs[i] = rec_connect(base, evpaxos_acceptor_address(lp_config, i).sin_addr.s_addr,
+								  evpaxos_acceptor_listen_port(lp_config,1)+100);
 	}
 	
 	requests = create_hashtable(512, hash_from_key, key_equal, NULL);
