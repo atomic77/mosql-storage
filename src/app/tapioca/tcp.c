@@ -35,7 +35,7 @@
 #include <event2/event_compat.h>
 #include <event2/bufferevent.h>
 #include <event2/bufferevent_compat.h>
-#include <libpaxos.h>
+#include <paxos.h>
 
 #include "tcp.h"
 #include "http.h"

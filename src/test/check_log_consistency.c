@@ -7,9 +7,9 @@
 
 #include "dsmDB_priv.h"
 #include <libpaxos/storage.h>
-#include <libpaxos.h>
+#include <paxos.h>
 #include <libpaxos/libpaxos_messages.h>
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 #include "config_reader.h"
 #include "socket_util.h"
 #include "../app/rec/index.h"
@@ -86,7 +86,7 @@ int main(int argc, char const *argv[]) {
 	start_iid = atoi(argv[2]);
 	
 	// Open acceptor logs
-    struct storage * ssm = storage_open(0, 1);
+    struct storage * ssm = storage_open(0);
     assert(ssm != NULL);
 
 	storage_tx_begin(ssm);

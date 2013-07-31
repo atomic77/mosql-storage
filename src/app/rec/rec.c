@@ -19,9 +19,9 @@
 
 #include "dsmDB_priv.h"
 #include <libpaxos/storage.h>
-#include <libpaxos.h>
+#include <paxos.h>
 #include <libpaxos/libpaxos_messages.h>
-#include <evpaxos/config_reader.h>
+#include <evpaxos/config.h>
 #include "config_reader.h"
 #include "socket_util.h"
 #include "index.h"
@@ -287,7 +287,7 @@ on_listener_error(struct evconnlistener* l, void* arg)
 }
 
 struct evconnlistener *
-bind_new_listener(struct event_base* b, address* a,
+bind_new_listener(struct event_base* b, const char *addr, int port,
  	evconnlistener_cb conn_cb, evconnlistener_errorcb err_cb)
 {
 	struct evconnlistener *el;
@@ -298,8 +298,8 @@ bind_new_listener(struct event_base* b, address* a,
 	
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(a->address_string);
-	sin.sin_port = htons(a->port);
+	sin.sin_addr.s_addr = inet_addr(addr);
+	sin.sin_port = htons(port);
 	el = evconnlistener_new_bind(
 		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
 	assert(el != NULL);
@@ -327,15 +327,16 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 	assert(l != NULL);
 	
 	// Create new listener for recovery requests
-	struct config* conf = read_config(paxos_conf);
-	address a;
-	a.address_string = "0.0.0.0";
+	struct evpaxos_config* conf = evpaxos_config_read(paxos_conf);
+	const char *address_string = "0.0.0.0";
+	int acc_port;
 	// For now define a rec as listening on acceptor port + 100
-	a.port = conf->acceptors[acceptor_id].port+100;
-	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
+	acc_port = evpaxos_acceptor_listen_port(conf, acceptor_id)+100;
+	struct evconnlistener *el =  bind_new_listener(base, address_string,acc_port, 
+												   on_connect, on_listener_error);
 
 	// Open acceptor logs
-    ssm = storage_open(acceptor_id, 1);
+    ssm = storage_open(acceptor_id);
     assert(ssm != NULL);
 
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);

@@ -87,7 +87,7 @@ int tapioca_init(int node_id, const char* tconfig, const char* pconfig) {
 	tapioca_config = tconfig;
 	paxos_config = pconfig;
 	
-	lp_config = read_config(paxos_config);
+	lp_config = evpaxos_config_read(paxos_config);
 	
 	signal(SIGINT, sigint);
 	signal(SIGSEGV, sigint);

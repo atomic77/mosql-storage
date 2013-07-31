@@ -75,7 +75,7 @@ static void print_stats();
 static struct event_base *base;
 static struct bufferevent *acc_bev;
 static struct event *timeout_ev;
-struct config *conf;
+struct evpaxos_config *conf;
 
 static int bytes_left;
 static struct timeval timeout_tv;
@@ -259,7 +259,7 @@ on_listener_error(struct evconnlistener* l, void* arg)
 }
 
 struct evconnlistener *
-bind_new_listener(struct event_base* b, address* a,
+bind_new_listener(struct event_base* b, const char *addr, int port,
  	evconnlistener_cb conn_cb, evconnlistener_errorcb err_cb)
 {
 	struct evconnlistener *el;
@@ -270,8 +270,8 @@ bind_new_listener(struct event_base* b, address* a,
 	
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(a->address_string);
-	sin.sin_port = htons(a->port);
+	sin.sin_addr.s_addr = inet_addr(addr);
+	sin.sin_port = port;
 	el = evconnlistener_new_bind(
 		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
 	assert(el != NULL);
@@ -283,12 +283,11 @@ bind_new_listener(struct event_base* b, address* a,
 static struct bufferevent*
 proposer_connect(struct event_base* b, struct sockaddr_in* a) {
 	struct bufferevent* bev;
-	
 	bev = bufferevent_socket_new(b, -1, BEV_OPT_CLOSE_ON_FREE);
 	bufferevent_enable(bev, EV_WRITE);
 	bufferevent_setcb(bev, NULL, NULL, on_socket_event, NULL);
 	struct sockaddr* saddr = (struct sockaddr*)a;
-	if (bufferevent_socket_connect(bev, saddr, sizeof(saddr)) {
+	if (bufferevent_socket_connect(bev, saddr, sizeof(*a))) {
 		bufferevent_free(bev);
 		return NULL;
 	}
@@ -309,22 +308,21 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	load_config_file(tapioca_config);	
 	init_validation();
 
-	conf = read_config(paxos_config);
+	conf = evpaxos_config_read(paxos_config);
 	base = event_base_new();
 
 	/* Set up connection to proposer */
 	//acc_bev =  proposer_connect(base, &conf->proposers[0]);
-	acc_bev =  proposer_connect(base, evpaxos_proposer_address(conf,0));
+	struct sockaddr_in saddr = evpaxos_proposer_address(conf,0);
+	acc_bev =  proposer_connect(base, &saddr);
 	assert(acc_bev != NULL);
 	
 	read_buffer = malloc(MAX_COMMAND_SIZE);
 	memset(read_buffer, 0, MAX_COMMAND_SIZE);
 	
 	/* Setup local listener */
-	address a;
-	a.address_string = LeaderIP;
-	a.port = LeaderPort;
-	struct evconnlistener *el =  bind_new_listener(base, &a, on_connect, on_listener_error);
+	struct evconnlistener *el =  bind_new_listener(base, LeaderIP, LeaderPort, 
+												   on_connect, on_listener_error);
 	gettimeofday(&timeout_tv, NULL);
 
 	event_base_dispatch(base);

@@ -40,7 +40,7 @@
 #include <uuid/uuid.h>
 #include <execinfo.h>
 
-#include <libpaxos.h>
+#include <paxos.h>
 
 #define BPTREE_MIN_DEGREE 5 
 #define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
