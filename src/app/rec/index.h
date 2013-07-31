@@ -22,8 +22,8 @@
 
 #include "dsmDB_priv.h"
 #include "storage.h"
-#include <libpaxos.h>
-#include <libpaxos/paxos_config.h>
+#include <paxos.h>
+#include <evpaxos/config.h>
 #include <unistd.h>
 #include <db.h>
 
