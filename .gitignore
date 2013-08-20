@@ -4,6 +4,7 @@
 .project
 .cproject
 
+CTAGS
 bin/
 Debug/
 Release/

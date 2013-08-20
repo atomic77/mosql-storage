@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.6)
 project(tapioca)
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(cmake/tags.cmake)
 
 find_package(BDB REQUIRED)
 find_package(LIBEVENT REQUIRED)
