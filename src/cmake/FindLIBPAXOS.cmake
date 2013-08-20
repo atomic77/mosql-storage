@@ -7,7 +7,7 @@
 set(LIBPAXOS_ROOT "" CACHE STRING "Ring-Paxos root directory")
 
 # Make this work with UC paxos; the two will have to be merged at some point
-find_path(LIBPAXOS_INCLUDE_DIR libpaxos.h HINTS "${LIBPAXOS_ROOT}/include")
+find_path(LIBPAXOS_INCLUDE_DIR paxos.h HINTS "${LIBPAXOS_ROOT}/include")
 find_library(LIBPAXOS_LIBRARY paxos HINTS "${LIBPAXOS_ROOT}/lib")
 find_library(LIBEVPAXOS_LIBRARY evpaxos HINTS "${LIBPAXOS_ROOT}/lib")
 

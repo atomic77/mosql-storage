@@ -1,6 +1,8 @@
 
 set(LIBSOURCES tcp_connection.c 
 		libtapioca.c mget_result.c tcp_protocol_btree.c libtapioca_btree.c tcp_protocol.c )
+include_directories(${LIBEVENT_INCLUDE_DIRS})
+
 add_library(tapioca STATIC ${LIBSOURCES} )
 add_library(tapioca_shared SHARED ${LIBSOURCES} )
 

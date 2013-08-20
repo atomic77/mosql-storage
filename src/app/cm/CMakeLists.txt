@@ -1,6 +1,8 @@
 include_directories(${CMAKE_SOURCE_DIR}/db)
 include_directories(${CMAKE_SOURCE_DIR}/util)
 include_directories(${LIBPAXOS_INCLUDE_DIRS})
+include_directories(${LIBEVENT_INCLUDE_DIRS})
+
 
 add_executable(cm cm.c bloom.c msg.c queue.c validation_fast.c)
 
