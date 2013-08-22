@@ -271,7 +271,7 @@ bind_new_listener(struct event_base* b, const char *addr, int port,
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = inet_addr(addr);
-	sin.sin_port = port;
+	sin.sin_port = htons(port);
 	el = evconnlistener_new_bind(
 		b, conn_cb, NULL, flags, -1, (struct sockaddr*)&sin, sizeof(sin));
 	assert(el != NULL);
