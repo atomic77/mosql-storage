@@ -175,7 +175,7 @@ int remote_init(struct evpaxos_config *lp_config, struct event_base *base) {
 //		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
 //			lp_config->acceptors[i].port+100);
 		acc_bevs[i] = rec_connect(base, evpaxos_acceptor_address(lp_config, i).sin_addr.s_addr,
-								  evpaxos_acceptor_listen_port(lp_config,1)+100);
+								  evpaxos_acceptor_listen_port(lp_config,0)+100);
 	}
 	
 	requests = create_hashtable(512, hash_from_key, key_equal, NULL);
