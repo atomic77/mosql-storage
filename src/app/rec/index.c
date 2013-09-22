@@ -68,8 +68,8 @@ rlog * rlog_init(const char *path) {
 			* also turns on logging. */
       DB_INIT_MPOOL |  /* Initialize the memory pool (in-memory cache) */
       DB_REGISTER	|
-      DB_THREAD	|  /* Cause the environment to be free-threaded */
-      DB_TXN_WRITE_NOSYNC ;
+      DB_THREAD; //	|  /* Cause the environment to be free-threaded */
+      //DB_TXN_WRITE_NOSYNC ;
 
     open_flags =
     		DB_CREATE;//  | DB_AUTO_COMMIT;
