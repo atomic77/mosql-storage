@@ -1287,6 +1287,54 @@ static int node_is_full(bptree_node* n)
 
 void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
 {
+	int i;
+    /* creates buffer and serializer instance. */
+    msgpack_sbuffer *buffer = msgpack_sbuffer_new();
+    msgpack_packer *pck = msgpack_packer_new(buffer, msgpack_sbuffer_write);
+    msgpack_sbuffer_clear(buffer);
+
+    msgpack_pack_int32(pck, bpm->execution_id);
+    msgpack_pack_raw(pck, sizeof(uuid_t));
+    msgpack_pack_raw_body(pck, bpm->root_key, sizeof(uuid_t));
+    msgpack_pack_int16(pck, bpm->bpt_id);
+	
+	msgpack_packer_free(pck);
+	*bsize = buffer->size;
+	void *b = buffer->data;
+	free(buffer);
+	return b;
+}
+
+bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
+{
+    msgpack_zone z;
+    msgpack_zone_init(&z, 4096);
+    msgpack_object obj;
+    msgpack_unpack_return ret;
+
+	int rv;
+	size_t offset;
+	bptree_meta_node *bpm;
+	if (buf == NULL) return NULL;
+	bpm = malloc(sizeof(bptree_meta_node));
+	
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    bpm->execution_id =  (int32_t) obj.via.i64;
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    memcpy(bpm->root_key, obj.via.raw.ptr, sizeof(uuid_t));
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    bpm->bpt_id = (int16_t) obj.via.i64;
+	
+	msgpack_zone_destroy(&z);
+	
+	if (ret != MSGPACK_UNPACK_SUCCESS) return NULL;
+	return bpm;
+
+}
+
+// To be deleted once TPL migration complete
+void * marshall_bptree_meta_node_tpl(bptree_meta_node *bpm, size_t *bsize)
+{
 	tpl_node *tn;
 	void *b;
 	const char *tpl_fmt_str = BPTREE_TPL_META_NODE_FMT;
@@ -1301,7 +1349,7 @@ void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
 	return b;
 }
 
-bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
+bptree_meta_node * unmarshall_bptree_meta_node_tpl(const void *buf, size_t sz)
 {
 	int rv;
 	tpl_node *tn;
