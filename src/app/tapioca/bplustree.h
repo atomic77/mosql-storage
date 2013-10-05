@@ -22,7 +22,6 @@
 #ifndef _BPLUSTREE_H_
 #define _BPLUSTREE_H_
 
-#include "tpl.h"
 #include "transaction.h"
 #include "tapioca_btree.h"
 #include <msgpack.h>
@@ -90,13 +89,13 @@ typedef struct bptree_key_val {
 } bptree_key_val;
 
 // See enum bptree_field_comparator in bplustree_client.h
-typedef void (*bptree_comparator)(const void *a, const void *b, size_t n);
+typedef int (*bptree_comparator)(const void *a, const void *b, size_t n);
 static bptree_comparator comparators[] =  {
 	int8cmp,
 	int16cmp,
 	int32cmp,
 	int64cmp,
-	strncmp,
+	strncmp_wrap,
 	memcmp,
 	strncmp_mysql
 };
@@ -200,8 +199,8 @@ void * marshall_bptree_node(bptree_node *n, size_t *bsize);
 bptree_node * unmarshall_bptree_node(const void *buf, size_t sz, size_t *nsize);
 
 //// *** Testing/debug functions
-int verify_bptree_order(bptree_session *bps,
-		enum bptree_order_verify mode);
+//int verify_bptree_order(bptree_session *bps,
+//		enum bptree_order_verify mode);
 
 int output_bptree(bptree_session *bps, int i ) ;
 int bptree_sequential_read(bptree_session *bps, int binary);
@@ -220,6 +219,8 @@ void bptree_key_value_to_string(bptree_session *bps, unsigned char *k,
 void bptree_key_value_to_string_kv(bptree_session *bps, bptree_key_val *kv,
 		char *out);
 
+bptree_node * create_new_empty_bptree_node();
+bptree_node * create_new_bptree_node(bptree_session *bps);
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);
 #endif

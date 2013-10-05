@@ -59,9 +59,6 @@ int free_node(bptree_node **n);
 void free_meta_node(bptree_meta_node **m);
 int bptree_index_next_internal(bptree_session *bps, void *k,
 		int32_t *ksize, void *v, int32_t *vsize);
-bptree_node * create_new_empty_bptree_node();
-bptree_node * create_new_bptree_node(
-		bptree_session *bps);
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 
@@ -92,8 +89,8 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x,
 		bptree_node *n,int i);
 bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
-bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
-		size_t *nsize);
+//bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
+//		size_t *nsize);
 
 
 // FIXME There is no longer any good reason to have commit done inside of
@@ -1333,7 +1330,7 @@ bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
 }
 
 // To be deleted once TPL migration complete
-void * marshall_bptree_meta_node_tpl(bptree_meta_node *bpm, size_t *bsize)
+/*void * marshall_bptree_meta_node_tpl(bptree_meta_node *bpm, size_t *bsize)
 {
 	tpl_node *tn;
 	void *b;
@@ -1421,7 +1418,7 @@ void * marshall_bptree_node_tpl(bptree_node *n, size_t *bsize)
 	tpl_free(tn);
 	return b;
 }
-
+*/
 
 // Pack all non-dynamic array stuff first, in the order of the struct def
 void * marshall_bptree_node_msgpack(bptree_node *n, size_t *bsize)
@@ -1635,7 +1632,7 @@ bptree_node * unmarshall_bptree_node(const void *buf, size_t sz, size_t *nsize)
 	return unmarshall_bptree_node_tpl(buf, sz, nsize);
 #endif
 }
-
+/*
 bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz, size_t *nsize)
 {
 	int i, rv, rv1, rv2;
@@ -1706,6 +1703,7 @@ bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz, size_t *nsi
 	return NULL;
 	//return 1;
 }
+*/
 
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root)
@@ -2536,4 +2534,9 @@ inline int strncmp_mysql(const void *i1, const void *i2, size_t sz)
 	const char *a = (const char*) i1 + (sz > 255 ? 2 : 1);
 	const char *b = (const char*) i2 + (sz > 255 ? 2 : 1);;
 	return strncmp(a,b,len);
+}
+
+inline int strncmp_wrap(const void *i1, const void *i2, size_t sz)
+{
+	return strncmp((char *)i1,(char *)i2,sz);
 }

@@ -117,6 +117,7 @@ int int16cmp (const void *i1, const void *i2, size_t v_ignored);
 int int32cmp (const void *i1, const void *i2, size_t v_ignored);
 int int64cmp (const void *i1, const void *i2, size_t v_ignored);
 int strncmp_mysql(const void *i1, const void *i2, size_t sz);
+int strncmp_wrap(const void *i1, const void *i2, size_t sz);
 
 
 
