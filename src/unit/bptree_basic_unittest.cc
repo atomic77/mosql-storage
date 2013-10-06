@@ -69,8 +69,11 @@ TEST_F(BptreeBasicTest, BasicNodeSerDe) {
 	strncpy(n->values[0] , "ccc", 3);
 	strncpy(n->values[1] , "dddddddd", 10);
 	buf = marshall_bptree_node(n, &bsize1);
+	EXPECT_NE(buf, NULL);
 	n2 = unmarshall_bptree_node(buf, bsize1, &bsize3);
+	EXPECT_NE(n2, NULL);
 	buf2 = marshall_bptree_node(n2, &bsize2);
+	EXPECT_NE(buf2, NULL);
 	c = memcmp(buf, buf2, bsize1);
 	// The buffers buf and buf2 should now be identical
 	EXPECT_TRUE (bsize1 > 0);
@@ -85,13 +88,16 @@ TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
 	void *buf, *buf2;
 	bptree_meta_node m, *m2;
 	memset(&m, 0, sizeof(bptree_meta_node));
-	m.execution_id = 1231231;
+	m.execution_id = 567;
 	uuid_generate_random(m.root_key);
 	m.bpt_id = 123;
 	
 	buf = marshall_bptree_meta_node(&m, &bsize1);
+	EXPECT_NE(buf, NULL);
 	m2 = unmarshall_bptree_meta_node(buf, bsize1);
+	EXPECT_NE(m2, NULL);
 	buf2 = marshall_bptree_meta_node(m2, &bsize2);
+	EXPECT_NE(m2, NULL);
 	c = memcmp(buf, buf2, bsize1);
 	// The buffers buf and buf2 should now be identical
 	EXPECT_TRUE (bsize1 > 0);
