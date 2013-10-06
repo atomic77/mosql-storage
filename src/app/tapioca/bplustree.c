@@ -104,7 +104,7 @@ int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		uint32_t local_execution_id)
 {
 	int rv;
-	if (open_flags != BPTREE_OPEN_ONLY) return 0;
+	if (open_flags != BPTREE_OPEN_ONLY) return BPTREE_OP_INVALID_INPUT;
 	bptree_meta_node *bpm;
 	bptree_set_active_bpt_id(bps, bpt_id);
 	bps->op_counter = 1;
@@ -1281,11 +1281,9 @@ static int node_is_full(bptree_node* n)
 
 /***
  * Methods for (un)marshalling b+tree cell and header data to byte buffers */
-
 void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
 {
 	int i;
-    /* creates buffer and serializer instance. */
     msgpack_sbuffer *buffer = msgpack_sbuffer_new();
     msgpack_packer *pck = msgpack_packer_new(buffer, msgpack_sbuffer_write);
     msgpack_sbuffer_clear(buffer);
@@ -1305,13 +1303,13 @@ void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
 bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
 {
     msgpack_zone z;
-    msgpack_zone_init(&z, 4096);
     msgpack_object obj;
     msgpack_unpack_return ret;
-
 	int rv;
-	size_t offset;
+	size_t offset = 0;
 	bptree_meta_node *bpm;
+	
+    msgpack_zone_init(&z, 4096);
 	if (buf == NULL) return NULL;
 	bpm = malloc(sizeof(bptree_meta_node));
 	
@@ -1329,99 +1327,8 @@ bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
 
 }
 
-// To be deleted once TPL migration complete
-/*void * marshall_bptree_meta_node_tpl(bptree_meta_node *bpm, size_t *bsize)
-{
-	tpl_node *tn;
-	void *b;
-	const char *tpl_fmt_str = BPTREE_TPL_META_NODE_FMT;
-	 // iIv
-	tn = tpl_map(tpl_fmt_str, &bpm->execution_id,
-			&bpm->root_key, sizeof(uuid_t),
-			&bpm->bpt_id);
-	tpl_pack(tn, 0);
-	tpl_dump(tn, TPL_MEM, &b, bsize);
-	//    assert(*bsize == (sizeof(bptree_meta_node)));
-	tpl_free(tn);
-	return b;
-}
-
-bptree_meta_node * unmarshall_bptree_meta_node_tpl(const void *buf, size_t sz)
-{
-	int rv;
-	tpl_node *tn;
-	bptree_meta_node *bpm;
-	if (buf == NULL) return NULL;
-
-	const char *tpl_fmt_str = BPTREE_TPL_META_NODE_FMT;
-#ifdef DEFENSIVE_MODE
-	char *fmt = tpl_peek(TPL_MEM, buf, sz);
-	if (fmt == NULL)
-		return NULL;
-	if (strcmp(tpl_fmt_str, fmt) != 0)
-		return NULL;
-	free(fmt);
-#endif
-	bpm = malloc(sizeof(bptree_meta_node));
-	// iIv
-	tn = tpl_map(tpl_fmt_str, &bpm->execution_id,
-			&bpm->root_key, sizeof(uuid_t),
-			&bpm->bpt_id);
-	rv = tpl_load(tn, TPL_MEM | TPL_PREALLOCD | TPL_EXCESS_OK, buf,
-			BPTREE_MAX_VALUE_SIZE);
-	if (rv < 0) goto unmarshall_exception;
-	rv = tpl_unpack(tn, 0);
-	if (rv < 0) goto unmarshall_exception;
-	tpl_free(tn);
-	return bpm;
-
-	unmarshall_exception: free(bpm);
-	return NULL;
-}
-
-void * marshall_bptree_node_tpl(bptree_node *n, size_t *bsize)
-{
-	int i;
-	tpl_node *tn;
-	tpl_bin tb_keys;
-	tpl_bin tb_values;
-	void *b;
-	const char *tpl_fmt_str = BPTREE_TPL_NODE_FMT;
-	assert(is_node_sane(n));
-
-	tn = tpl_map(tpl_fmt_str,
-			&n->self_key, sizeof(uuid_t), // c#
-			&n->key_count, &n->leaf, // ivv
-			&n->key_sizes, BPTREE_NODE_SIZE, // i#
-			&tb_keys, // A(B)
-			&n->value_sizes, BPTREE_NODE_SIZE, // i#
-			&tb_values, // A(B)
-			&n->children, sizeof(uuid_t), BPTREE_NODE_SIZE+1, // c##
-			&n->parent, sizeof(uuid_t),	// c#
-			&n->prev_node, sizeof(uuid_t), // c#
-			&n->next_node, sizeof(uuid_t), // c#
-			&n->active, BPTREE_NODE_SIZE // c#
-			);
-
-	tpl_pack(tn, 0); // pack the non-array elements?
-	for (i = 0; i < BPTREE_NODE_SIZE; i++)
-	{
-		if (i >= n->key_count) break;
-		tb_keys.addr = n->keys[i];
-		tb_values.addr = n->values[i];
-		tb_keys.sz = n->key_sizes[i];
-		tb_values.sz = n->value_sizes[i];
-		tpl_pack(tn, 1);
-		tpl_pack(tn, 2);
-	}
-	tpl_dump(tn, TPL_MEM, &b, bsize);
-	tpl_free(tn);
-	return b;
-}
-*/
-
 // Pack all non-dynamic array stuff first, in the order of the struct def
-void * marshall_bptree_node_msgpack(bptree_node *n, size_t *bsize)
+void * marshall_bptree_node(bptree_node *n, size_t *bsize)
 {
 	assert(is_node_sane(n));
 
@@ -1482,7 +1389,7 @@ void * marshall_bptree_node_msgpack(bptree_node *n, size_t *bsize)
 }
 
 //@ Wrapper for the various implementations of serialization we may have */
-inline void * marshall_bptree_node(bptree_node *n, size_t *bsize)
+/* inline void * marshall_bptree_node(bptree_node *n, size_t *bsize)
 {
 #ifdef BPTREE_MARSHALLING_MSGPACK
 	return marshall_bptree_node_msgpack(n,bsize);
@@ -1491,9 +1398,10 @@ inline void * marshall_bptree_node(bptree_node *n, size_t *bsize)
 #endif
 
 }
+*/
 
 
-bptree_node * unmarshall_bptree_node_msgpack(const void *buf,
+bptree_node * unmarshall_bptree_node(const void *buf,
 		size_t sz, size_t *nsize)
 {
     msgpack_zone z;
@@ -1559,6 +1467,7 @@ bptree_node * unmarshall_bptree_node_msgpack(const void *buf,
 }
 
 
+// I have no idea why I wrote this second method. 
 bptree_node * unmarshall_bptree_node_msgpack2(const void *buf,
 		size_t sz, size_t *nsize)
 {
@@ -1624,86 +1533,6 @@ bptree_node * unmarshall_bptree_node_msgpack2(const void *buf,
 	return n;
 }
 
-bptree_node * unmarshall_bptree_node(const void *buf, size_t sz, size_t *nsize)
-{
-#ifdef BPTREE_MARSHALLING_MSGPACK
-	return unmarshall_bptree_node_msgpack(buf, sz, nsize);
-#else
-	return unmarshall_bptree_node_tpl(buf, sz, nsize);
-#endif
-}
-/*
-bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz, size_t *nsize)
-{
-	int i, rv, rv1, rv2;
-	tpl_node *tn;
-	tpl_bin tb_keys;
-	tpl_bin tb_values;
-	bptree_node *n;
-	//bptree_node n;
-	const char *tpl_fmt_str = BPTREE_TPL_NODE_FMT;
-	if (buf == NULL) return NULL;
-#ifdef DEFENSIVE_MODE
-	char *fmt = tpl_peek(TPL_MEM, buf, sz);
-	if (fmt == NULL) return NULL;
-	if (strcmp(tpl_fmt_str, fmt) != 0) return NULL;
-	free(fmt);
-#endif
-
-	n = create_new_empty_bptree_node();
-	*nsize = 0;
-	if (n == NULL) return NULL;
-	// Mapping is the same as with packing
-	tn = tpl_map(tpl_fmt_str,
-			&n->self_key, sizeof(uuid_t), // c#
-			&n->key_count, &n->leaf, // ivv
-			&n->key_sizes, BPTREE_NODE_SIZE, // i#
-			&tb_keys, // A(B)
-			&n->value_sizes, BPTREE_NODE_SIZE, // i#
-			&tb_values, // A(B)
-			&n->children, sizeof(uuid_t), BPTREE_NODE_SIZE+1, // c##
-			&n->parent, sizeof(uuid_t),	// c#
-			&n->prev_node, sizeof(uuid_t), // c#
-			&n->next_node, sizeof(uuid_t), // c#
-			&n->active, BPTREE_NODE_SIZE // c#
-			);
-
-	*nsize += sizeof(bptree_node);
-	rv = tpl_load(tn, TPL_MEM | TPL_PREALLOCD | TPL_EXCESS_OK, buf,
-			BPTREE_MAX_VALUE_SIZE);
-	if (rv == -1) goto unmarshall_exception;
-
-	rv = tpl_unpack(tn, 0); // unpack the non-array elements.
-	if (rv < 0) goto unmarshall_exception;
-	for (i = 0; i < BPTREE_NODE_SIZE; i++)
-	{
-		if (i >= n->key_count) break;
-		rv1 = tpl_unpack(tn, 1);
-		rv2 = tpl_unpack(tn, 2);
-		if (rv1 < 0 || rv2 < 0) return NULL;
-		// TODO Defend against bad malloc
-		if (tb_keys.sz > BPTREE_MAX_VALUE_SIZE || tb_values.sz > BPTREE_MAX_VALUE_SIZE)
-			return NULL;
-		n->keys[i] = malloc(tb_keys.sz);
-		memcpy(n->keys[i], tb_keys.addr, tb_keys.sz);
-		n->values[i] = malloc(tb_values.sz);
-		memcpy(n->values[i], tb_values.addr, tb_values.sz);
-		n->key_sizes[i] = tb_keys.sz;
-		n->value_sizes[i] = tb_values.sz;
-		*nsize += tb_keys.sz + tb_values.sz;
-		free(tb_values.addr);
-		free(tb_keys.addr);
-	}
-	tpl_free(tn);
-	assert(is_node_sane(n));
-
-	return n;
-
-	unmarshall_exception: free(n);
-	return NULL;
-	//return 1;
-}
-*/
 
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root)
@@ -1991,7 +1820,8 @@ bptree_meta_node * read_meta_node(bptree_session *bps, int *rv)
 	{
 		*rv = BPTREE_OP_TAPIOCA_NOT_READY;
 	}
-	else if ( _v->size <= sizeof(bptree_meta_node))
+	//else if ( _v->size <= sizeof(bptree_meta_node))
+	else if ( _v->size <= sizeof(uuid_t))
 	{
 		*rv = BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 	}
