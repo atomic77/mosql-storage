@@ -136,28 +136,19 @@ static void validate_buffer(char* buffer, size_t size) {
 }
 
 
-static void handle_join_message(char* buffer, size_t size) {
-	join_msg* m;
-	assert(0 == 0xDEADBEEF);
-	// FIXME Implement me
-
-/*	lp_message_header* paxos_header;
-	submit_cmd_msg* paxos_submit_cmd;
-	m = (join_msg*)buffer;
-	m->ST = validation_ST();
+static void handle_join_message(join_msg *jmsg) {
 	
-	paxos_header = malloc(1024);
-	paxos_header->type = client_submit;
-	paxos_submit_cmd = (submit_cmd_msg*)paxos_header->data;
-
-	paxos_submit_cmd->cmd_size = size;
-	paxos_header->size = size + sizeof(submit_cmd_msg);
-	memcpy(paxos_submit_cmd->cmd_value, buffer, size);
+	int rv, written;
+	paxos_msg pm;
+	struct evbuffer* payload = evbuffer_new();
+	jmsg->ST = validation_ST();
 	
-	send(leader_fd, paxos_header, paxos_header->size + sizeof(paxos_header), 0);
-	
-	free(paxos_header);
-*/
+	pm.data_size = sizeof(join_msg);
+	pm.type = submit;
+	evbuffer_add(payload,jmsg, sizeof(join_msg));
+	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
+	bufferevent_write_buffer(acc_bev, payload);
+	evbuffer_free(payload);
 }
 
 
@@ -216,7 +207,10 @@ on_read(struct bufferevent* bev, void* arg)
 				validate((tr_submit_msg *) read_buffer);
 				break;
 			case NODE_JOIN:
-				printf("dropping message NODE_JOIN -- to be reimplemented\n");
+				if(len < sizeof(join_msg)) return;
+				
+				evbuffer_remove(b, &jmsg, sizeof(join_msg));
+				handle_join_message(&jmsg);
 				break;  
 			default: 
 				printf("dropping unknown message type %d \n",type);
