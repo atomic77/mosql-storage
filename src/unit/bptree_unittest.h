@@ -39,6 +39,8 @@ protected:
 	char k[LARGE_BUFFER_SZ];
 	char v[LARGE_BUFFER_SZ];
 	int32_t ksize, vsize;
+	const char *hostname;
+	int port;
 
     tapioca_handle* th;
 
@@ -73,9 +75,11 @@ protected:
 		sleep(1);
 		memset(k, 0,LARGE_BUFFER_SZ);
 		memset(v, 0,LARGE_BUFFER_SZ);
+		hostname = "127.0.0.1";
+		port = 5555;
 		keys = 1000;
 		// Create a default tree for all test cases; some may create their own
-        th = tapioca_open("127.0.0.1", 5555);
+        th = tapioca_open(hostname, port);
         EXPECT_NE(th, (tapioca_handle*)NULL);
 		createNewTree(1000);
 	}
