@@ -25,6 +25,9 @@ struct thread_config
 	int keys;
 	int thread_id;
 	int start_key;
+	const char *hostname;
+	int port;
+	bool strict;
 } ;
 
 
@@ -38,11 +41,12 @@ protected:
 	pthread_t *threads;
 	struct thread_config *s;
 	
+	//static void *thr_tapioca_bptree_traversal_test(void *data);
+	
 	void SetUp() {
 		BptreeTestBase::SetUp();
-		num_threads = 4;
-		keys = 200;
-
+		num_threads = 8;
+		keys = 500;
 		dbug = 0;
 		seed = 1010;
 		srand(seed);
@@ -56,7 +60,7 @@ protected:
 
 };
 
-void *thr_tapioca_bptree_traversal_test(void *data)
+void* thr_tapioca_bptree_traversal_test(void* data)
 {
 	// Assume that we've inserted k keys into index; pick a random place to
 	// search and then verify that we index_next the correct # of records
@@ -67,10 +71,8 @@ void *thr_tapioca_bptree_traversal_test(void *data)
 	int* arr;
 	tapioca_handle *th;
 	struct thread_config *s = (struct thread_config *) data;
-	static char* address = (char *) "127.0.0.1";
-	static int port = 5555;
 
-	th = tapioca_open("127.0.0.1", 5555);
+	th = tapioca_open(s->hostname, s->port);
 	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
 			BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
 	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
@@ -91,7 +93,8 @@ void *thr_tapioca_bptree_traversal_test(void *data)
 		arr[i] = i + s->start_key;
 	n = s->keys;
 
-	printf("THR_ID %d: Searching then traversing keys...\n", s->thread_id);
+	printf("Traversal Thread %d: Traversing %d keys starting from a%08d...\n", 
+		   s->thread_id, s->keys, s->start_key);
 	for (i = 0; i < s->keys; i++)
 		arr[i] = i + s->start_key;
 	n = s->keys;
@@ -102,19 +105,14 @@ void *thr_tapioca_bptree_traversal_test(void *data)
 		k = arr[r];
 		arr[r] = arr[n - 1];
 		n--;
-		char *kptr = kk + 1;
-		sprintf(kptr, "%08d", k);
+		sprintf(kk, "a%08d", k);
 		rv = tapioca_bptree_search(th, tbpt_id, kk, 10, vv, &vsize);
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 		int cnt = 0;
 		do
 		{
 			rv = tapioca_bptree_index_next(th, tbpt_id, k2, &ksize, v2, &vsize);
-			if (memcmp(k2, kk, 10) < 0)
-			{
-				printf("Index_next return out-of-order element: k2, kk %s %s\n",
-						k2, kk);
-				return 0;
-			}
+			if (rv != BPTREE_OP_EOF) EXPECT_GE(memcmp(k2, kk, 10), 0);
 			cnt++;
 		} while (rv == 1);
 
@@ -154,10 +152,8 @@ void *thr_tapioca_bptree_search_test(void *data)
 	int* arr;
 	tapioca_handle *th;
 	struct thread_config *s = (struct thread_config *) data;
-	static char* address = (char *) "127.0.0.1";
-	static int port = 5555;
 
-	th = tapioca_open("127.0.0.1", 5555);
+	th = tapioca_open(s->hostname, s->port);
 	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
 			BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
 	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
@@ -176,8 +172,8 @@ void *thr_tapioca_bptree_search_test(void *data)
 		arr[i] = i + s->start_key;
 	n = s->keys;
 
-	printf("THR_ID %d: Searching keys... starting from %d \n", s->thread_id,
-			s->start_key);
+	printf("Search Thread %d: Searching for %d keys starting from a%08d...\n", 
+		   s->thread_id, s->keys, s->start_key);
 	for (i = 0; i < s->keys; i++)
 		arr[i] = i + s->start_key;
 	n = s->keys;
@@ -190,8 +186,10 @@ void *thr_tapioca_bptree_search_test(void *data)
 		n--;
 		char *kptr = kk + 1;
 		sprintf(kptr, "%08d", k);
+		//printf("Searching for k %s  \n", kk);
 		rv = tapioca_bptree_search(th, tbpt_id, kk, 10, vv, &vsize);
-		//if (rv !=1) printf("THR_ID %d: Failed to find %s!\n",s->thread_id,kk);
+		if(s->strict) EXPECT_TRUE(rv == BPTREE_OP_KEY_FOUND);
+		EXPECT_TRUE(rv == BPTREE_OP_KEY_FOUND | rv == BPTREE_OP_KEY_NOT_FOUND);
 		tapioca_commit(th);
 	}
 
@@ -221,20 +219,20 @@ void *thr_tapioca_bptree_insert_test(void *data)
 	int* arr;
 	tapioca_handle *th;
 	struct thread_config *s = (struct thread_config *) data;
-	static char* address = (char *) "127.0.0.1";
-	static int port = 5555;
 	tapioca_bptree_id tbpt_id;
 	if (s->thread_id == 0)
 	{
-		th = tapioca_open("127.0.0.1", 5555);
+		th = tapioca_open(s->hostname, s->port);
 		tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
 				BPTREE_OPEN_OVERWRITE);
+		EXPECT_EQ(tbpt_id, s->seed);
 	}
 	else
 	{
-		th = tapioca_open("127.0.0.1", 5555);
+		th = tapioca_open(s->hostname, s->port);
 		tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
 				BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+		EXPECT_EQ(tbpt_id, s->seed);
 	}
 	if (th == NULL)
 	{
@@ -244,16 +242,16 @@ void *thr_tapioca_bptree_insert_test(void *data)
 	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 
-	printf("THR_ID %d connected to node id %d", s->thread_id,
-			tapioca_node_id(th));
+	//printf("THR_ID %d connected to node id %d", s->thread_id,
+			//tapioca_node_id(th));
 	arr = (int *) malloc(s->keys * sizeof(int));
 	for (i = 0; i < s->keys; i++)
 		arr[i] = i + s->start_key;
 	n = s->keys;
 	char kk[10] = "aaaaaaaaa";
 	char vv[10] = "cccc";
-	printf("THR_ID %d: Writing keys starting from %d...\n", s->thread_id,
-			s->start_key);
+	printf("Insert Thread %d: Writing %d keys starting from a%08d...\n", 
+		   s->thread_id, s->keys, s->start_key);
 	clock_gettime(CLOCK_MONOTONIC, &tms);
 	int total_retries = 0;
 	for (i = 0; i < s->keys; i++)
@@ -262,39 +260,25 @@ void *thr_tapioca_bptree_insert_test(void *data)
 		k = arr[r];
 		arr[r] = arr[n - 1];
 		n--;
-		char *kptr = kk + 1;
-		sprintf(kptr, "%08d", k);
+		sprintf(kk, "a%08d", k);
 		rv = -1;
 		int attempts = 1;
 		do
 		{
-			printf("Inserting k/v %s / %s \n", kk, vv);
+			//printf("Inserting k/v %s / %s \n", kk, vv);
 			rv = tapioca_bptree_insert(th, tbpt_id, kk, 10, vv, 10,
 					BPTREE_INSERT_UNIQUE_KEY);
-			//if (rv != tapioca_bptree_ERR_DUPLICATE_KEY_INSERTED)
-			// rv here could be DUPLICATE_KEY; do we care?
-			if (rv < 0) {
-				printf("Error on insert; will wait a bit\n");
-				long wait = 5 * 100 * 1000 + (rand() % 100) * 1000;
-				attempts++;
-				usleep(wait);
-			}
-			else if (rv != BPTREE_ERR_DUPLICATE_KEY_INSERTED)
-			{
-				rv = tapioca_commit(th);
-			}
-			else
+			EXPECT_GE(rv, BPTREE_OP_SUCCESS);
+			rv = tapioca_commit(th);
+			if (rv < 0)
 			{
 				long wait = 100 * 1000 + (rand() % 100) * 1000;
 				attempts++;
 				usleep(wait);
 			}
 
-		} while (rv != 0 && attempts < 10);
-		if (rv != 0)
-		{
-			printf("Could  not commit %s after %d tries\n", kk, attempts);
-		}
+		} while (rv < 0 && attempts < 10);
+		EXPECT_GE(rv, 0);
 		total_retries += attempts;
 
 		tapioca_commit(th);
@@ -313,69 +297,6 @@ void *thr_tapioca_bptree_insert_test(void *data)
 
 }
 
-void *thr_tapioca_bptree_serialization_test(void *data) // so we can instantiate as a thread
-{
-	int i, j, k, v, n, r, rv;
-	struct timespec tms, tmend;
-	double druntime;
-	long runtime;
-	int* arr;
-	tapioca_handle *th;
-	struct thread_config *s = (struct thread_config *) data;
-	static char* address = (char *) "127.0.0.1";
-	static int port = 5555;
-
-	if (s->thread_id == 0)
-	{
-		th = tapioca_open("127.0.0.1", 5555);
-		tapioca_bptree_initialize_bpt_session(th, s->seed, BPTREE_OPEN_OVERWRITE);
-	}
-	else
-	{
-		th = tapioca_open("127.0.0.1", 5555);
-		tapioca_bptree_initialize_bpt_session(th, s->seed,
-				BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
-	}
-	if (th == NULL)
-	{
-		printf("Failed to connect to tapioca\n");
-		return NULL;
-	}
-	return NULL;
-
-}
-
-void *thr_tapioca_bptree_test_concurrent_access(void *data)
-{ // so that we can instantiate as a thread
-	int rv, i, j, k, v;
-	struct thread_config *s = (struct thread_config *) data;
-	tapioca_handle *th;
-	th = tapioca_open("127.0.0.1", 5555);
-	k = 1;
-	v = s->thread_id;
-	printf("THR_ID %d start \n", s->thread_id);
-	fflush(stdout);
-	if (!s->thread_id == 0)
-		sleep(5);
-
-	rv = tapioca_put(th, &k, sizeof(int), &v, sizeof(int));
-	rv = tapioca_get(th, &k, sizeof(int), &v, sizeof(int));
-
-	printf("THR_ID %d pre-commit k/v:  %d / %d \n", s->thread_id, k, v);
-	fflush(stdout);
-	if (s->thread_id == 0)
-		sleep(10);
-	rv = tapioca_commit(th);
-	printf("THR_ID %d commit rv:  %d\n", s->thread_id, rv);
-	fflush(stdout);
-
-	rv = tapioca_get(th, &k, sizeof(int), &v, sizeof(int));
-	printf("THR_ID %d post-commit k/v:  %d / %d \n", s->thread_id, k, v);
-	fflush(stdout);
-	rv = tapioca_commit(th);
-	return NULL;
-}
-
 TEST_F (BptreeConcurrencyTest, TestInsertAndTraverse) 
 {
 	//int rv, i, k, dbug, v, seed, num_threads;
@@ -387,6 +308,8 @@ TEST_F (BptreeConcurrencyTest, TestInsertAndTraverse)
 		s[i].dbug = dbug;
 		s[i].keys = keys;
 		s[i].thread_id = i;
+		s[i].hostname = hostname;
+		s[i].port = port;
 		rv = pthread_create(&(threads[i]), NULL, thr_tapioca_bptree_insert_test, &s[i]);
 		if (i == 0)
 			usleep(500 * 1000); // Let the first thd destroy the existing b+tree
@@ -417,6 +340,8 @@ TEST_F (BptreeConcurrencyTest, TestInsertAndTraverse)
 		s[i].dbug = dbug;
 		s[i].keys = keys;
 		s[i].thread_id = i;
+		s[i].hostname = hostname;
+		s[i].port = port;
 		rv = pthread_create(&(threads[i]), NULL, thr_tapioca_bptree_insert_test, &s[i]);
 		usleep(50 * 1000); // Let the first thread destroy the existing b+tree
 	}
@@ -464,13 +389,17 @@ TEST_F(BptreeConcurrencyTest, TestInsertAndSearch)
 		ins[i].dbug = srch[i].dbug = dbug;
 		ins[i].keys = srch[i].keys = keys;
 		ins[i].thread_id = i;
+		ins[i].hostname = hostname;
+		ins[i].port = port;
 		srch[i].thread_id = num_threads + i;
-		srch[i].start_key = (num_threads - i) * keys;
+		srch[i].start_key = i * keys;
+		srch[i].hostname = hostname;
+		srch[i].port = port;
+		srch[i].strict = false;
 		rv = pthread_create(&(ins_threads[i]), NULL, thr_tapioca_bptree_insert_test,
 				&ins[i]);
 		if (i == 0)
 			usleep(500 * 1000); // Let the first thd destroy the existing b+tree
-		// we can share the s struct cause nothing gets changed
 		rv = pthread_create(&(srch_threads[i]), NULL, thr_tapioca_bptree_search_test,
 				&srch[i]);
 		usleep(50 * 1000); // Let the first thread destroy the existing b+tree
@@ -517,6 +446,9 @@ TEST_F(BptreeConcurrencyTest, TestInsertThenSearch)
 		s[i].dbug = dbug;
 		s[i].keys = keys;
 		s[i].thread_id = i;
+		s[i].hostname = hostname;
+		s[i].port = port;
+		s[i].strict = true;
 		rv = pthread_create(&(threads[i]), NULL, thr_tapioca_bptree_insert_test, &s[i]);
 		if (i == 0)
 			usleep(500 * 1000); // Let first thread destroy the existing b+tree
