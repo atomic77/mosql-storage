@@ -129,10 +129,13 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 
 class BptreeCursorTest : public BptreeTestBase {
 	
+protected:
+	bool DBUG;
 	void SetUp() {
 		BptreeTestBase::SetUp();
 		//num_threads = 1;
-		keys = 10;
+		keys = 200;
+		DBUG = true;
 	}
 	
 };
@@ -198,75 +201,72 @@ TEST_F(BptreeCursorTest, TestTwoElementBptree)
 
 TEST_F(BptreeCursorTest, TestPartialKeyTraversal) 
 {
-	//int rv1, rv2, rv3, rv, r, n, i;
-	//char k;
 	int n,key,r;
-	char kk[10] = "aaaa";
-	char vv[10] = "cccc";
+	int64_t k1;
+	int32_t k2;
 
-	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
-	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
+	tapioca_bptree_set_num_fields(th,tbpt_id, 2);
+	tapioca_bptree_set_field_info(th,tbpt_id, 0, sizeof(int64_t), 
+								  BPTREE_FIELD_COMP_INT_64);
+	tapioca_bptree_set_field_info(th,tbpt_id, 1, sizeof(int32_t), 
+								  BPTREE_FIELD_COMP_INT_32);
 
+	strcpy(v, "cccc");
 	int* arr;
 	arr = (int *) malloc(keys * sizeof(int));
 	for (int i = 0; i < keys; i++) arr[i] = i;
 	n = keys;
 	int total_retries = 0;
-	for (int i = 0; i < keys; i++)
+	for (int i = 0; i < keys / 10; i++)
 	{
-		r = rand() % (n);
-		key = arr[r];
-		arr[r] = arr[n-1];
-		n--;
-		sprintf(kk, "a%08d", key);
-		rv = -1;
-		int attempts = 1;
-		do
-		{
-			rv = tapioca_bptree_insert(th, tbpt_id, &kk, 10, &vv, 10,
+		for (int j = 0; j < 5; j++) {
+			r = rand() % (n);
+			key = arr[r];
+			arr[r] = arr[n-1];
+			n--;
+			k1 = key;
+			k2 = j;
+			memcpy(k, &k1, sizeof(int64_t));
+			memcpy(k+sizeof(int64_t), &k2, sizeof(int32_t));
+			rv = tapioca_bptree_insert(th, tbpt_id, k, 
+					sizeof(int64_t) + sizeof(int32_t), v, 4,
 					BPTREE_INSERT_UNIQUE_KEY);
 			rv = tapioca_commit(th);
-			if (rv < 0)
-			{
-				long wait = 100 * 1000 + (rand() % 100) * 1000;
-				attempts++;
-				usleep(wait);
-			}
-		} while (rv < 0 && attempts < 10);
-		EXPECT_GE(rv, 0);
-		total_retries += attempts;
-		tapioca_commit(th);
+			EXPECT_GE(rv, 0);
+		}
 	}
 
-	/////////////////////////////////////////////////////////////////////////
-	// Now we have a tree with some data; let's do a bunch of prefix searching
-	int pkeys = (int) keys / 10;
-	rv1 = rv2 = 1;
-	for (int i = 0; i < pkeys; i++)
+	if (DBUG) {
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_GRAPHVIZ);
+	}
+	return;
+	
+	// Now we have a tree with some data; let's do some partial key searching
+	for (int i = 1; i < keys/10; i++)
 	{
-		char kpref[10];
-		char vpref[10];
-		char pref[10] = "a0000000";
-		sprintf(pref, "%a07d", i);
-		pref[8] = '\0';
-		pref[9] = '\0';
-
-		rv = tapioca_bptree_search(th, tbpt_id, pref, 10, vpref, &vsize);
+		k1 = i;
+		memcpy(k, &k1, sizeof(int64_t));
+		
+		rv = tapioca_bptree_search(th, tbpt_id, k, sizeof(int64_t), v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
-		char comp1[10], comp2[10];
-		memcpy(comp1, pref, 10);
-		memcpy(comp2, pref, 10);
-		comp1[8] = 0x30;
-		comp2[8] = 0x31;
-		rv = tapioca_bptree_index_next(th, tbpt_id, kpref, &ksize, vpref, &vsize);
+		EXPECT_EQ(strcmp(v, "cccc"), 0);
+		
+		rv = tapioca_bptree_index_next(th, tbpt_id, k, &ksize, v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
-		EXPECT_EQ(memcmp(kpref, comp1, 10), 0);
-		rv = tapioca_bptree_index_next(th, tbpt_id, kpref, &ksize, vpref, &vsize);
+		EXPECT_EQ(ksize,sizeof(int64_t)+sizeof(int32_t));
+		EXPECT_EQ(vsize,4);
+		EXPECT_EQ(strcmp(v, "cccc"), 0);
+		EXPECT_EQ(*(int32_t*)(k+sizeof(int64_t)), 0);
+		memcpy(k, &k2, ksize);
+		
+		rv = tapioca_bptree_index_next(th, tbpt_id, k, &ksize, v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
-		EXPECT_EQ(memcmp(kpref, comp2, 10), 0);
+		EXPECT_EQ(*(int32_t*)(k+sizeof(int64_t)), 1);
+		EXPECT_EQ(strcmp(v, "cccc"), 0);
+	}
+	
+	if (DBUG) {
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_GRAPHVIZ);
 	}
 
-	// search should have returned not found, and next two values
-	// should be a020 and a021
-	//return (!rv && rv1 && rv2);
 }
