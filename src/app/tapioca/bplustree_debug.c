@@ -129,6 +129,8 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 			break;
 	}
 
+	if (rv != BPTREE_OP_SUCCESS) 
+		printf ("Debug type %d failed with code %d\n",debug_opt,rv);
 	return rv;
 }
 
@@ -332,6 +334,7 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	{
 		fprintf(fp, "\n\n");
 		fflush(stdout);
+		rv = BPTREE_OP_SUCCESS;
 	}
 	else if (rv == BPTREE_OP_TAPIOCA_NOT_READY)
 	{
@@ -620,17 +623,17 @@ int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 		}
 	} else {
 		uuid_unparse(n->next_node, uuid_out_c);
-//		if (!uuid_is_null(n->next_node))
-//			fprintf(fp, "\"N-%s\" -> \"N-%s\"\n ", uuid_out_n, uuid_out_c);
+		if (!uuid_is_null(n->next_node))
+			fprintf(fp, "\"N-%s\" -> \"N-%s\"\n ", uuid_out_n, uuid_out_c);
 //		if (!uuid_is_null(n->prev_node))
 //			uuid_unparse(n->prev_node, uuid_out_c);
 //		fprintf(fp, "\"N-%s\" -> \"N-%s\" [weight = 100.0]\n ", uuid_out_n, uuid_out_c);
 	}
-	// Print parent link
-	uuid_unparse(n->parent, uuid_out_c);
-	if (!uuid_is_null(n->parent))
-		fprintf(fp, "\"N-%s\" -> \"N-%s\" [color=\"#CC0000\"] \n ",
-			uuid_out_n, uuid_out_c);
-
+//	// Print parent link
+//	uuid_unparse(n->parent, uuid_out_c);
+//	if (!uuid_is_null(n->parent))
+//		fprintf(fp, "\"N-%s\" -> \"N-%s\" [color=\"#CC0000\"] \n ",
+//			uuid_out_n, uuid_out_c);
+//
 	return BPTREE_OP_SUCCESS;
 }

@@ -47,8 +47,9 @@ protected:
 		BptreeTestBase::SetUp();
 		num_threads = 8;
 		keys = 500;
-		dbug = 0;
-		seed = 1010;
+		DBUG = true;
+		dbug = 0; 
+		seed = tbpt_id;
 		srand(seed);
 
 		threads = (pthread_t *) malloc(sizeof(pthread_t) * num_threads);
