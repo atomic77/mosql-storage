@@ -41,6 +41,7 @@ protected:
 	int32_t ksize, vsize;
 	const char *hostname;
 	int port;
+	bool DBUG;
 
     tapioca_handle* th;
 
@@ -71,13 +72,14 @@ protected:
 	
 	virtual void SetUp() {
 		system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
-		system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/null; cd -");
+		system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
 		sleep(1);
 		memset(k, 0,LARGE_BUFFER_SZ);
 		memset(v, 0,LARGE_BUFFER_SZ);
 		hostname = "127.0.0.1";
 		port = 5555;
 		keys = 1000;
+		DBUG = false;
 		// Create a default tree for all test cases; some may create their own
         th = tapioca_open(hostname, port);
         EXPECT_NE(th, (tapioca_handle*)NULL);
@@ -85,6 +87,16 @@ protected:
 	}
 	
 	virtual void TearDown() {
+		
+		if (DBUG) {
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_GRAPHVIZ);
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_RECURSIVELY);
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_SEQUENTIALLY);
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_VERIFY_RECURSIVELY);
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_VERIFY_SEQUENTIALLY);
+			tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_INDEX_RECURSIVE_SCAN);
+		}
+
         tapioca_close(th);
 		system("killall -q cm tapioca example_acceptor example_proposer rec");
 		sleep(2);

@@ -17,7 +17,31 @@
 
 #include "bptree_unittest.h"
 
+int *init_new_int_array(int sz) 
+{
+	int *arr;  
+	arr = (int *) malloc(sz * sizeof(int));
+	for (int i = 0; i < sz; i++) arr[i] = i;
+	return arr;
+}
+
+int sample_without_replacement(int *arr, int *n)
+{
+	int r,k;
+	r = rand() % (*n);
+	k = arr[r];
+	arr[r] = arr[*n-1];
+	(*n)--;
+	return k;
+}
+
+
 class BptreeInterfaceTest : public BptreeTestBase {
+	
+	void SetUp() {
+		BptreeTestBase::SetUp();
+		//keys = 50;
+	}
 };
 
 
@@ -28,9 +52,27 @@ TEST_F(BptreeInterfaceTest, TestEmptyBptree)
 	EXPECT_EQ(rv, BPTREE_OP_EOF);
 }
 
+TEST_F(BptreeInterfaceTest, TestRandomBatchedInsert)
+{
+	int batch = 5, r;
+	tapioca_bptree_set_num_fields(th, tbpt_id, 1);
+	tapioca_bptree_set_field_info(th, tbpt_id, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
+	int n = keys;
+	int *arr = init_new_int_array(n);
+	for (int i = 0; i < keys; i++)
+	{
+		r = sample_without_replacement(arr, &n);
+		rv = tapioca_bptree_insert(th, tbpt_id, &r, 5, &batch, sizeof(int),
+								   BPTREE_INSERT_UNIQUE_KEY);
+		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
+		rv = tapioca_commit(th);
+		EXPECT_GE(0, rv);
+		if (i % 250 == 0) printf("Updated %d keys\n", i);
+	}
+}
+
 TEST_F(BptreeInterfaceTest, TestUpdate)
 {
-	// Randomly sample from an array of size keys and insert into our btree
 	int i, j, n, r;
 	tapioca_bptree_set_num_fields(th, tbpt_id, 1);
 	tapioca_bptree_set_field_info(th, tbpt_id, 0, 5, BPTREE_FIELD_COMP_STRNCMP);
@@ -47,13 +89,6 @@ TEST_F(BptreeInterfaceTest, TestUpdate)
 		EXPECT_GE(0, rv);
 		if (i % 250 == 0) printf("Updated %d keys\n", i);
 	}
-// TODO Add ordering check
-/*	printf("Verifying ordering...OFF ");
-	rv1 = verify_tapioca_bptree_order(th, tbpt_id, BPTREE_VERIFY_RECURSIVELY);
-	//rv2 = verify_tapioca_bptree_order(th, tbpt_id, BPTREE_VERIFY_SEQUENTIALLY);
-	dump_tapioca_bptree_contents(th, tbpt_id, 1, 0);
-	return (rv1 && rv2);
-	*/
 }
 
 TEST_F(BptreeInterfaceTest, MultiFieldInsertDupe) 
@@ -121,20 +156,17 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 		if (i % 250 == 0) printf("Updated %d keys\n", i);
 	}
 
-	//printf("Verifying ordering... OFF");
-//	rv1 = verify_tapioca_bptree_order(th, tbpt_id, BPTREE_VERIFY_RECURSIVELY);
-//	rv2 = verify_tapioca_bptree_order(th, tbpt_id, BPTREE_VERIFY_SEQUENTIALLY);
-//	dump_tapioca_bptree_contents(th, tbpt_id, 1, 1);
 }
 
 class BptreeCursorTest : public BptreeTestBase {
 	
 protected:
-	bool DBUG;
+	int pkeys, skeys;
 	void SetUp() {
 		BptreeTestBase::SetUp();
 		//num_threads = 1;
-		keys = 200;
+		pkeys = 50;
+		skeys = 3;
 		DBUG = true;
 	}
 	
@@ -163,8 +195,6 @@ TEST_F(BptreeCursorTest, TestSingleElementTree)
 	EXPECT_EQ(0, memcmp(k, kk, 5));
 	EXPECT_EQ(0, memcmp(v, vv, 5));
 }
-
-
 
 TEST_F(BptreeCursorTest, TestTwoElementBptree) 
 {
@@ -197,8 +227,6 @@ TEST_F(BptreeCursorTest, TestTwoElementBptree)
 
 }
 
-
-
 TEST_F(BptreeCursorTest, TestPartialKeyTraversal) 
 {
 	int n,key,r;
@@ -212,20 +240,16 @@ TEST_F(BptreeCursorTest, TestPartialKeyTraversal)
 								  BPTREE_FIELD_COMP_INT_32);
 
 	strcpy(v, "cccc");
-	int* arr;
-	arr = (int *) malloc(keys * sizeof(int));
-	for (int i = 0; i < keys; i++) arr[i] = i;
-	n = keys;
+	int* arr = init_new_int_array(pkeys);
+	n = pkeys;
 	int total_retries = 0;
-	for (int i = 0; i < keys / 10; i++)
+	for (int i = 0; i < pkeys; i++)
 	{
-		for (int j = 0; j < 5; j++) {
-			r = rand() % (n);
-			key = arr[r];
-			arr[r] = arr[n-1];
-			n--;
-			k1 = key;
+		key = sample_without_replacement(arr, &n);
+		k1 = key;
+		for (int j = 0; j < skeys; j++) {
 			k2 = j;
+			//printf("Inserting %lld,%lld \n", k1,k2);
 			memcpy(k, &k1, sizeof(int64_t));
 			memcpy(k+sizeof(int64_t), &k2, sizeof(int32_t));
 			rv = tapioca_bptree_insert(th, tbpt_id, k, 
@@ -239,17 +263,19 @@ TEST_F(BptreeCursorTest, TestPartialKeyTraversal)
 	if (DBUG) {
 		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_GRAPHVIZ);
 	}
-	return;
+	free(arr);
+	arr = init_new_int_array(pkeys); // to avoid an EOF
+	n = pkeys;
 	
 	// Now we have a tree with some data; let's do some partial key searching
-	for (int i = 1; i < keys/10; i++)
+	for (int i = 0; i < pkeys; i++)
 	{
-		k1 = i;
+		k1 = sample_without_replacement(arr, &n);
 		memcpy(k, &k1, sizeof(int64_t));
 		
 		rv = tapioca_bptree_search(th, tbpt_id, k, sizeof(int64_t), v, &vsize);
-		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
-		EXPECT_EQ(strcmp(v, "cccc"), 0);
+		//EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		//EXPECT_EQ(strcmp(v, "cccc"), 0);
 		
 		rv = tapioca_bptree_index_next(th, tbpt_id, k, &ksize, v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
@@ -267,6 +293,11 @@ TEST_F(BptreeCursorTest, TestPartialKeyTraversal)
 	
 	if (DBUG) {
 		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_GRAPHVIZ);
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_RECURSIVELY);
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_DUMP_SEQUENTIALLY);
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_VERIFY_RECURSIVELY);
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_VERIFY_SEQUENTIALLY);
+		tapioca_bptree_debug(th,tbpt_id, BPTREE_DEBUG_INDEX_RECURSIVE_SCAN);
 	}
 
 }
