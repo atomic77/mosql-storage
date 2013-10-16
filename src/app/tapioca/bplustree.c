@@ -1010,7 +1010,9 @@ static int bptree_search_recursive(bptree_session *bps,
 		{
 			memcpy(kv->v, x->values[i], x->value_sizes[i]);
 			kv->vsize = x->value_sizes[i];
-			bps->cursor_pos++;
+			// Leave the cursor where it is if this is a partial key match
+			if (kv->ksize >= x->key_sizes[i])
+				bps->cursor_pos++;
 			return BPTREE_OP_KEY_FOUND;
 		}
 		else
