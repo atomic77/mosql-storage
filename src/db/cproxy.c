@@ -223,6 +223,11 @@ static void handle_join_message(join_msg* m) {
 	NumberOfNodes++;
 }
 
+static void handle_node_config(reconf_msg *rmsg) {
+	// TODO 
+	// 
+	
+}
 
 struct header {
 	short type;
@@ -239,6 +244,9 @@ static void on_deliver(char* value, size_t size, iid_t iid,
 			break;
 		case NODE_JOIN:
 			handle_join_message((join_msg *)value);
+			break;
+		case RECONFIG:
+			handle_node_config((reconf_msg *)value);
 			break;
 		default:
 			printf("handle_request: dropping message of unkown type\n");
