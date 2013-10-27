@@ -139,6 +139,7 @@ typedef struct flat_key_val_t {
 // message type recognized by the certifier
 #define TRANSACTION_SUBMIT 1 	// tr_submit_msg
 #define NODE_JOIN 2				// join_msg
+#define RECONFIG 2				// reconf_msg
 
 /*
     data contains:
@@ -164,7 +165,6 @@ typedef struct tr_submit_msg_t {
 //#define TR_MAX_MSG_SIZE 8192
 //#define TR_MAX_DATA_SIZE (TR_MAX_MSG_SIZE - sizeof(tr_submit_msg))
 
-
 typedef struct join_msg_t {
 	short type;
 	int node_id;
@@ -187,6 +187,20 @@ typedef struct tr_deliver_msg_t {
     int updateset_count;
     char data[0];
 } tr_deliver_msg;
+
+/* The certifier now sends out a reconfiguration message with the full state of
+ the system; data contains:
+    array of node_ids
+    array of ports
+    array of ip addresses in char[17]
+ */
+
+typedef struct reconf_msg_t {
+	short type;
+	int ST;
+	int nodes;
+	char data[0];
+} reconf_msg;
 
 //#define DL_MAX_DATA_SIZE 8192
 

@@ -25,6 +25,7 @@
 #include "queue.h"
 #include "socket_util.h"
 #include "util.h"
+#include "peer.h"
 
 
 #include <paxos.h>
@@ -143,6 +144,14 @@ static void handle_join_message(join_msg *jmsg) {
 	struct evbuffer* payload = evbuffer_new();
 	jmsg->ST = validation_ST();
 	
+	reconf_msg rmsg;
+	rmsg.type = RECONFIG;
+	//rmsg.nodes = NumberOfNodes + sizeof(len(pending_list))
+	rmsg.ST = validation_ST();
+	
+	// TODO Implement
+	// add_node_config(rmsg.data);
+	
 	pm.data_size = sizeof(join_msg);
 	pm.type = submit;
 	evbuffer_add(payload,jmsg, sizeof(join_msg));
@@ -151,6 +160,13 @@ static void handle_join_message(join_msg *jmsg) {
 	evbuffer_free(payload);
 }
 
+static void handle_reconfig(reconf_msg *rmsg) {
+	// stub
+	// TODO
+	// Find nodes in rmsg that were in pending list, remove them
+	// peer_add/sync to update current state
+	
+}
 
 struct request {
 	short type;
@@ -292,6 +308,22 @@ proposer_connect(struct event_base* b, struct sockaddr_in* a) {
 	return bev;
 }
 
+static void on_deliver(char* value, size_t size, iid_t iid,
+		ballot_t ballot, int prop_id, void *arg) {
+	struct header* h = (struct header*)value;
+	switch (h->type) {
+		case TRANSACTION_SUBMIT:
+			// What a tragic waste that every tx submit is going to be delivered here...
+			//handle_transaction(value, size);
+			break;
+		case RECONFIG:
+			handle_reconfig((reconf_msg *) value);
+			break;
+		default:
+			printf("handle_request: dropping message of unkown type\n");
+	}
+}
+
 static void init(const char* tapioca_config, const char* paxos_config) {
 	int cm_fd, result;
 	pthread_t val_thread;
@@ -313,6 +345,10 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	
 	read_buffer = malloc(MAX_COMMAND_SIZE);
 	memset(read_buffer, 0, MAX_COMMAND_SIZE);
+	
+	// The ceritifer will now need to learn configuration change requests
+	struct learner *l = evlearner_init(paxos_config, on_deliver, NULL, base);
+	assert(l != NULL);
 	
 	/* Setup local listener */
 	struct evconnlistener *el =  bind_new_listener(base, LeaderIP, LeaderPort, 
