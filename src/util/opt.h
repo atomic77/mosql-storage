@@ -30,16 +30,16 @@ enum optiontype {
 	fla_opt,
 };
 
-struct option {
+struct conf_option {
 	char  flag;
 	const char* desc;
 	void* pvar;
 	enum optiontype type;
 };
 
-int get_options(struct option* opt, int argc, char * const argv[]);
-void get_options_string(struct option* opt, char* str);
-void print_options(struct option* opt);
+int get_options(struct conf_option* opt, int argc, char * const argv[]);
+void get_options_string(struct conf_option* opt, char* str);
+void print_options(struct conf_option* opt);
 
 #ifdef __cplusplus
 }

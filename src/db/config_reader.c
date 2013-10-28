@@ -50,11 +50,11 @@ node_info * get_node_info(int node_id) {
 //Check that all values were configured
 void check_values(int node_count) {
 
-    if(NumberOfNodes != node_count) {
+/*    if(NumberOfNodes != node_count) {
         printf("Error: Some node configurations are missing\n");
         exit(1);
     }
-    
+ */   
     if(ValidationBufferSize == -1) {
         printf("Error: ValidationBufferSize not initialized\n");
         exit(1);
@@ -89,11 +89,12 @@ void check_values(int node_count) {
         printf("Error: MaxPreviousST not initialized\n");
         exit(1);
     }
-    
+/*    
     if(NumberOfNodes == -1) {
         printf("Error: NumberOfNodes not initialized\n");
         exit(1);
     }
+    */
 }
 
 int load_config_file(const char * path) {
@@ -161,7 +162,7 @@ int load_config_file(const char * path) {
             continue;
         }
 
-        if(starts_with("NumberOfNodes", string) == 0) {		    
+ /*       if(starts_with("NumberOfNodes", string) == 0) {		    
             sscanf(string, "%s %d", tmp, &NumberOfNodes);
             printf("Setting NumberOfNodes: %d\n", NumberOfNodes);
             node_info_table = calloc(NumberOfNodes, sizeof(node_info));
@@ -174,13 +175,14 @@ int load_config_file(const char * path) {
             cache_node_info_table = calloc(NumberOfCacheNodes, sizeof(node_info));
             continue;
         }
+        */
 
 		if (starts_with("ValidationDeliverInterval", string) == 0) {
 			sscanf(string, "%s %d", tmp, &ValidationDeliverInterval);
 			printf("Setting ValidationDeliverInterval: %d\n", ValidationDeliverInterval);
 			continue;
 		}
-        
+/*        
         if(starts_with("node", string) == 0) {
             node_info * n;
             if(node_info_table == NULL) {
@@ -254,7 +256,7 @@ int load_config_file(const char * path) {
             cache_node_count++;
             continue;
         }
-
+*/
         if(starts_with("recnode", string) == 0) {
             sscanf(string, "%s %d %s %d", tmp, &tmp_id, tmp_ip, &tmp_port);            
 			size = strlen(tmp_ip);

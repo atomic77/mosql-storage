@@ -108,7 +108,7 @@ static struct bufferevent* cm_connect(struct event_base* b,
 }
 
 int cproxy_init(const char* paxos_config, struct event_base *b) {
-	struct learner *l;
+	struct evlearner *l;
 	ST = 0;
 	base = b; 
 	cert_bev = cm_connect(base, LeaderIP, LeaderPort);
@@ -222,11 +222,29 @@ static void handle_join_message(join_msg* m) {
 	}
 	NumberOfNodes++;
 }
+	
 
 static void handle_node_config(reconf_msg *rmsg) {
-	// TODO 
-	// 
+	int i;
+	node_info *n;
+	n = (node_info *) rmsg->data;
+	printf("Got node reconfig: %d nodes \n",rmsg->nodes);
 	
+	for (i = 0; i < rmsg->nodes; i++) {
+		struct peer *p = peer_get(n->net_id);
+		if (p == NULL) {
+			peer_add(n->net_id,n->ip, n->port);
+		}
+		if(n->port == LocalPort	&& 
+			strncmp(n->ip, LocalIpAddress,17) == 0) {
+			// This is us
+			assert(NodeID == -1 || NodeID == n->net_id);
+			NodeID = n->net_id;
+		}
+		n++;
+	}
+	assert(rmsg->nodes - NumberOfNodes == 1);
+	NumberOfNodes = rmsg->nodes;
 }
 
 struct header {

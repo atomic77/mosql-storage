@@ -30,7 +30,7 @@ static int iterations = 10;
 static int help = 0;
 
 
-static struct option options[] =
+static struct conf_option options[] =
 {
 	{'a', "address", &address, str_opt},
 	{'p', "port", &port, int_opt},

@@ -149,4 +149,4 @@ fi
 sleep $DELAY
 
 launch_cm  ${params[@]}
-launch_nodes ${params[@]}
+#launch_nodes ${params[@]}

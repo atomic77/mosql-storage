@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-int tapioca_init(int node_id, const char* tapioca_config, const char* paxos_config);
+int tapioca_init(const char* tapioca_config, const char* paxos_config);
 void tapioca_init_defaults(void);
 void tapioca_add_node(int node_id, char* address, int port);
 void tapioca_start(int recovery);

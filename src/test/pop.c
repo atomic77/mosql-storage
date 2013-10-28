@@ -38,7 +38,7 @@ static int isget = 0;
 static int help = 0;
 
 
-static struct option options[] =
+static struct conf_option options[] =
 {
 	{'a', "ip address", &ip, str_opt},
 	{'p', "port", &port, int_opt},
