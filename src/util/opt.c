@@ -23,7 +23,7 @@
 #include <unistd.h>
 
 
-static void getoptstr(struct option* opt, char* str) {
+static void getoptstr(struct conf_option* opt, char* str) {
 	int i = 0;
 	int s = 0;
 	while (opt[i].flag != 0) {
@@ -40,7 +40,7 @@ static void getoptstr(struct option* opt, char* str) {
 }
 
 
-static void set_option(struct option* opt, char c) {
+static void set_option(struct conf_option* opt, char c) {
 	int i = 0;
 	while (opt[i].flag != 0) {
 		if (opt[i].flag != c) {
@@ -67,7 +67,7 @@ static void set_option(struct option* opt, char c) {
 }
 
 
-int get_options(struct option* opt, int argc, char * const argv[]) {
+int get_options(struct conf_option* opt, int argc, char * const argv[]) {
 	char c;
 	char opt_str[128];
 	getoptstr(opt, opt_str);
@@ -84,7 +84,7 @@ int get_options(struct option* opt, int argc, char * const argv[]) {
 }
 
 
-void get_options_string(struct option* opt, char* str) {
+void get_options_string(struct conf_option* opt, char* str) {
 	int i = 0;
 	while (opt[i].flag != 0) {
 		str[i] = opt[i].flag;
@@ -94,7 +94,7 @@ void get_options_string(struct option* opt, char* str) {
 }
 
 
-void print_options(struct option* opt) {
+void print_options(struct conf_option* opt) {
 	int i = 0;
 	while (opt[i].flag != 0) {
 		if (opt[i].type == int_opt)

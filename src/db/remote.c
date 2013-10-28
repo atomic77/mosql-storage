@@ -155,8 +155,7 @@ int remote_init(struct evpaxos_config *lp_config, struct event_base *base) {
 	int i;
 	struct peer* p;
 	
-	p = peer_get(NodeID);
-	recv_sock = udp_bind_fd(peer_port(p));
+	recv_sock = udp_bind_fd(LocalPort);
 	socket_make_non_block(recv_sock);
 	send_sock = udp_socket();
 	socket_make_non_block(send_sock);

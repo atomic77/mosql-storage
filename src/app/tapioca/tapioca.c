@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <tapiocadb.h>
+#include <getopt.h>
+#include <string.h>
 
 
 static int recover = 0;
@@ -38,6 +40,7 @@ static const char* paxos_config;
 static char filename[128];
 
 
+/*
 static struct option options[] = {
 	{'r', "recover", &recover, fla_opt},
 	{'j', "join", &join, fla_opt},
@@ -45,41 +48,100 @@ static struct option options[] = {
 	{'h', "help", &help, fla_opt},
 	{0, 0, 0, int_opt}
 };
+*/
 
 
-static void usage(char const* progname) {
-	char optstr[128];
-	get_options_string(options, optstr);
-	printf("Usage: %s [-%s] <node id> <tapioca config> <paxos config> [tcp port]\n", progname, optstr);
-	print_options(options);
-	exit(1);
+struct option long_options[] =
+{
+		/* These options set a flag. */
+		{"node-type", 		required_argument, 0, 'n'},
+		{"ip-address",   	required_argument, 0, 'i'},
+		{"port",	required_argument,       0, 'p'},
+		{"dump-state",  	no_argument,       0, 'd'},
+		{"paxos-config",	required_argument,       0, 'c'},
+		{"storage-config",  	required_argument,       0, 's'},
+		{"recover",  	no_argument,       0, 'r'},
+		{"help",  			no_argument,       0, 'h'},
+		{0, 0, 0, 0}
+};
+
+const char *short_opts = "n:i:p:dc:s:rh";
+
+void print_usage()
+{
+
+	struct option opt = long_options[0];
+	int i = 0;
+	fprintf(stderr, "Command line options:\n");
+	while (1)
+	{
+		if (opt.name == 0)
+			break;
+		fprintf(stderr, "\t--%s , -%c \n", opt.name, opt.val);
+		i++;
+		opt = long_options[i];
+	}
+	fprintf(stderr, "Node type: %d - regular, %d - cache\n",
+		REGULAR_NODE, CACHE_NODE);
 }
 
 
 int main(int argc, char* const argv[]) {
 	int rv;
-
-	rv = get_options(options, argc, argv);
-	if (rv == -1 || help) usage(argv[0]);
-	
-	if (argc >= rv + 3) {
-		node_id = atoi(argv[rv++]);
-		tapioca_config = argv[rv++];
-		paxos_config = argv[rv++];
-	} else {
-		usage(argv[0]);
+	int opt_idx;
+	char ch;
+	while ((ch = getopt_long(argc, argv, short_opts, long_options, &opt_idx)) != -1)
+	{
+		switch (ch)
+		{
+		case 'n':
+			// node type = atoi(optarg);
+			// 
+			NodeType = atoi(optarg);
+			if(NodeType > CACHE_NODE) {
+				fprintf(stderr, "Invalid node type\n");
+				print_usage();
+				exit(1);
+			}
+			break;
+		case 'i':
+			strncpy(LocalIpAddress, optarg,17);
+			break;
+		case 'p':
+			LocalPort = atoi(optarg);
+			break;
+		case 'd':
+			dump = 1;
+			break;
+		case 'c':
+			paxos_config = optarg;
+			break;
+		case 's':
+			tapioca_config = optarg;
+			break;
+		case 'r':
+			// no recovery mode yet...
+			break;
+		case 'h':
+			print_usage();
+			exit(1);
+			break;
+		}
 	}
 	
-	if (argc > rv) {
-		tcp_port = atoi(argv[rv++]);
-	}
+	tapioca_init(tapioca_config, paxos_config);
 	
-	tapioca_init(node_id, tapioca_config, paxos_config);
 	if (dump) {
-		sprintf(filename, "/tmp/tapioca-store-%d.bin", node_id);
+		sprintf(filename, "/tmp/tapioca-store-%s-%d.bin", 
+				LocalIpAddress, LocalPort);
 		tapioca_dump_store_at_exit(filename);
 	}
 	
+	tcp_init(LocalPort);
+	tapioca_start_and_join();
+	
+	// Old logic
+	/*
 	if (join) {
 		printf("Join host %s:%d (%d) \n", argv[6], atoi(argv[7]), tcp_port);
         tapioca_add_node(node_id, argv[6], atoi(argv[7]));
@@ -95,6 +157,6 @@ int main(int argc, char* const argv[]) {
 		
 		tapioca_start(recover);
 	}
-	
+		*/
 	return 0;
 }

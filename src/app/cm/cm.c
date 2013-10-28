@@ -30,9 +30,9 @@
 
 #include <paxos.h>
 #include <libpaxos/libpaxos_messages.h>
-//#include "libpaxos_messages.h"
 #include "msg.h"
 #include "tapiocadb.h"
+#include "hashtable.h"
 
 
 #include <stdlib.h>
@@ -45,6 +45,7 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <event2/listener.h>
 #include <event2/event.h>
@@ -63,11 +64,18 @@ static unsigned int committed_tx = 0;
 static unsigned int max_tx_size = 0;
 static unsigned int max_buffer_size = 0;
 static unsigned int max_buffer_count = 0;
+static unsigned int node_pending = 0;
+static time_t node_join_attempted;
 static time_t first_submitted;
 static time_t last_submitted;
 static int max_count = 0;
 
 static unsigned char *read_buffer;
+
+struct header {
+	short type;
+	char data[0];
+};
 
 
 static void print_stats();
@@ -80,7 +88,6 @@ struct evpaxos_config *conf;
 
 static int bytes_left;
 static struct timeval timeout_tv;
-
 
 // Submit committed transaction to paxos
 static int submit_transaction(tr_submit_msg *t) {
@@ -139,32 +146,67 @@ static void validate_buffer(char* buffer, size_t size) {
 
 static void handle_join_message(join_msg *jmsg) {
 	
-	int rv, written;
+	int rv, written,i;
 	paxos_msg pm;
-	struct evbuffer* payload = evbuffer_new();
-	jmsg->ST = validation_ST();
-	
+	time_t tm;
 	reconf_msg rmsg;
+	node_info n;
+	struct peer *p;
+	
+	// Do we have a pending valid join? If so, ignore
+	tm = time(NULL);
+	if (node_pending && (tm - node_join_attempted) < 0) return;
+	
+	struct evbuffer* payload = evbuffer_new();
+	
 	rmsg.type = RECONFIG;
-	//rmsg.nodes = NumberOfNodes + sizeof(len(pending_list))
+	rmsg.nodes = NumberOfNodes + 1;
 	rmsg.ST = validation_ST();
 	
-	// TODO Implement
-	// add_node_config(rmsg.data);
+	node_join_attempted = tm;
+	node_pending = 1;
+		
+	evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
 	
-	pm.data_size = sizeof(join_msg);
+	// Add existing nodes
+	for (i=0; i < NumberOfNodes; i++) {
+		p = peer_get(i);
+		strncpy(n.ip, peer_address(p),17);
+		n.net_id = i;
+		n.port = peer_port(p);
+		evbuffer_add(payload, &n, sizeof(node_info));
+	}
+	// Add the new node
+	strncpy(n.ip, jmsg->address,17);
+	n.net_id = NumberOfNodes;
+	n.port = jmsg->port;
+	evbuffer_add(payload, &n, sizeof(node_info));
+	
 	pm.type = submit;
-	evbuffer_add(payload,jmsg, sizeof(join_msg));
+	pm.data_size = evbuffer_get_length(payload);
+	assert(pm.data_size == 
+			sizeof(reconf_msg) + rmsg.nodes*sizeof(node_info));
+	
 	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
 	bufferevent_write_buffer(acc_bev, payload);
 	evbuffer_free(payload);
 }
 
 static void handle_reconfig(reconf_msg *rmsg) {
-	// stub
-	// TODO
-	// Find nodes in rmsg that were in pending list, remove them
-	// peer_add/sync to update current state
+	int i;
+	node_info *n;
+	n = (node_info *) rmsg->data;
+	
+	for (i = 0; i < rmsg->nodes; i++) {
+		struct peer *p = peer_get(n->net_id);
+		if (p == NULL) {
+				peer_add(n->net_id,n->ip, n->port);
+		}
+		n++;
+	} 	
+	assert(rmsg->nodes - NumberOfNodes == 1); 
+	NumberOfNodes = rmsg->nodes;
+	node_pending = 0;
 	
 }
 
@@ -313,7 +355,7 @@ static void on_deliver(char* value, size_t size, iid_t iid,
 	struct header* h = (struct header*)value;
 	switch (h->type) {
 		case TRANSACTION_SUBMIT:
-			// What a tragic waste that every tx submit is going to be delivered here...
+			// What a tragic waste that every tx is going to be delivered here...
 			//handle_transaction(value, size);
 			break;
 		case RECONFIG:
@@ -338,7 +380,6 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	base = event_base_new();
 
 	/* Set up connection to proposer */
-	//acc_bev =  proposer_connect(base, &conf->proposers[0]);
 	struct sockaddr_in saddr = evpaxos_proposer_address(conf,0);
 	acc_bev =  proposer_connect(base, &saddr);
 	assert(acc_bev != NULL);
@@ -347,7 +388,7 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	memset(read_buffer, 0, MAX_COMMAND_SIZE);
 	
 	// The ceritifer will now need to learn configuration change requests
-	struct learner *l = evlearner_init(paxos_config, on_deliver, NULL, base);
+	struct evlearner *l = evlearner_init(paxos_config, on_deliver, NULL, base);
 	assert(l != NULL);
 	
 	/* Setup local listener */

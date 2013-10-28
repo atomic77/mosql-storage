@@ -37,7 +37,7 @@ static int skip_analyze = 0;
 static int help = 0;
 
 
-static struct option options[] = {
+static struct conf_option options[] = {
 	{'f', "tmp file", &tmp_file, str_opt},
 	{'t', "tmp directory", &tmp_dir, str_opt},
 	{'o', "output file", &output_file, str_opt},

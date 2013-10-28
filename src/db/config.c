@@ -30,9 +30,12 @@ int ValidationDeliverInterval;
 int NodeID;
 int NumberOfNodes;
 int NumberOfCacheNodes;
+int NodeType;
+char LocalIpAddress[17];
+int LocalPort;
 
 void set_default_global_variables(void) {
-	NodeID = 0;
+	NodeID = -1;
 	StorageMaxOldVersions = 4;
 	ValidationBufferSize = 128;
 	LeaderIP = "127.0.0.1";
@@ -40,7 +43,7 @@ void set_default_global_variables(void) {
 	StorageMaxSize = 1024*1024*1024;
 	StorageMinFreeSize = 1024*1024;
 	MaxPreviousST = 128;
-	NumberOfNodes = 1;
+	NumberOfNodes = 0;
 	NumberOfCacheNodes = 0;
 	ValidationDeliverInterval = 4000;
 }

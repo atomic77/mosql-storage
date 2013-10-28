@@ -66,6 +66,9 @@ extern int MaxPreviousST;
 extern int ValidationBufferSize;
 extern int NumberOfNodes;
 extern int NumberOfCacheNodes;
+extern int NodeType;
+extern char LocalIpAddress[17];
+extern int LocalPort;
 
 /*
     Maximum period of time in which the validation buffer 

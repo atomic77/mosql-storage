@@ -28,7 +28,7 @@
 #include <time.h>
 #include <getopt.h>
 
-struct option long_options[] =
+struct conf_option long_options[] =
 {
 		/* These options set a flag. */
 		{"trace-file-suffix", 		required_argument, 0, 'f'},
@@ -99,7 +99,7 @@ void update_stats(unsigned char *k, int ksize, int vsize, st_stats *t);
 void print_usage()
 {
 
-	struct option opt = long_options[0];
+	struct conf_option opt = long_options[0];
 	int i = 0;
 	fprintf(stderr, "Command line options:\n");
 	while (1)
