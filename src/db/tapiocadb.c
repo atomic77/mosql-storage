@@ -130,7 +130,7 @@ void tapioca_start_and_join(void) {
 	assert(rv >= 0);
 	rv = cproxy_init(paxos_config, base);
 	assert(rv >= 0);
-	cproxy_submit_join(NodeID, LocalIpAddress, LocalPort);
+	cproxy_submit_join(NodeType, LocalIpAddress, LocalPort);
 	event_dispatch();
 }
 

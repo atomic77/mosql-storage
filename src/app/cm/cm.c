@@ -160,8 +160,16 @@ static void handle_join_message(join_msg *jmsg) {
 	struct evbuffer* payload = evbuffer_new();
 	
 	rmsg.type = RECONFIG;
-	rmsg.nodes = NumberOfNodes + 1;
 	rmsg.ST = validation_ST();
+	rmsg.regular_nodes = NumberOfNodes ;
+	rmsg.cache_nodes = NumberOfCacheNodes;
+	
+	if(jmsg->node_type == REGULAR_NODE) {
+		rmsg.regular_nodes++;
+	} 
+	else {
+		rmsg.cache_nodes++;
+	}
 	
 	node_join_attempted = tm;
 	node_pending = 1;
@@ -169,23 +177,26 @@ static void handle_join_message(join_msg *jmsg) {
 	evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
 	
 	// Add existing nodes
-	for (i=0; i < NumberOfNodes; i++) {
+	for (i=0; i < NumberOfNodes + NumberOfCacheNodes; i++) {
 		p = peer_get(i);
+		assert(p != NULL);
 		strncpy(n.ip, peer_address(p),17);
 		n.net_id = i;
 		n.port = peer_port(p);
+		n.node_type = peer_node_type(p);
 		evbuffer_add(payload, &n, sizeof(node_info));
 	}
-	// Add the new node
+	// Define the new node	
 	strncpy(n.ip, jmsg->address,17);
-	n.net_id = NumberOfNodes;
+	n.net_id = NumberOfNodes + NumberOfCacheNodes;
 	n.port = jmsg->port;
+	n.node_type = jmsg->node_type;
 	evbuffer_add(payload, &n, sizeof(node_info));
 	
 	pm.type = submit;
 	pm.data_size = evbuffer_get_length(payload);
-	assert(pm.data_size == 
-			sizeof(reconf_msg) + rmsg.nodes*sizeof(node_info));
+	assert(pm.data_size == sizeof(reconf_msg)  
+			+ (rmsg.cache_nodes+rmsg.regular_nodes)*sizeof(node_info));
 	
 	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
 	bufferevent_write_buffer(acc_bev, payload);
@@ -197,15 +208,17 @@ static void handle_reconfig(reconf_msg *rmsg) {
 	node_info *n;
 	n = (node_info *) rmsg->data;
 	
-	for (i = 0; i < rmsg->nodes; i++) {
+	for (i = 0; i < rmsg->regular_nodes + rmsg->cache_nodes; i++) {
 		struct peer *p = peer_get(n->net_id);
 		if (p == NULL) {
 				peer_add(n->net_id,n->ip, n->port);
 		}
 		n++;
 	} 	
-	assert(rmsg->nodes - NumberOfNodes == 1); 
-	NumberOfNodes = rmsg->nodes;
+	assert( (rmsg->regular_nodes + rmsg->cache_nodes) - 
+			(NumberOfNodes +  NumberOfCacheNodes) == 1); 
+	NumberOfNodes = rmsg->regular_nodes;
+	NumberOfCacheNodes = rmsg->cache_nodes;
 	node_pending = 0;
 	
 }

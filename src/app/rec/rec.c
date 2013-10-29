@@ -198,11 +198,6 @@ static void handle_transaction(void* value, size_t size, iid_t iid) {
 }
 
 
-static void handle_join_message(join_msg* m) {
-	peer_add(m->node_id, m->address, m->port);
-	NumberOfNodes++;
-}
-
 
 static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
@@ -215,7 +210,10 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 			handle_transaction(value, size, iid);
 			break;
 		case NODE_JOIN:
-			handle_join_message(value);
+			//handle_join_message(value);
+			break;
+		case RECONFIG:
+			//handle_node_config((reconf_msg *)value);
 			break;
 	}
 }

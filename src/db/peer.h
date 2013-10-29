@@ -30,6 +30,7 @@ struct peer* peer_get(int id);
 int peer_count();
 char* peer_address(struct peer* p);
 int peer_port(struct peer* p);
+int peer_node_type(struct peer* p);
 void peer_add_recnode(int id, char* address, int port);
 struct peer* peer_get_recnode(int id);
 consistent_hash peer_get_default_hash();
