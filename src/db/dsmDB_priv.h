@@ -93,6 +93,7 @@ typedef struct node_info_t {
     char ip[17];
     int port;
     int net_id;
+	int node_type;
 } node_info;
 
 
@@ -169,7 +170,7 @@ typedef struct tr_submit_msg_t {
 
 typedef struct join_msg_t {
 	short type;
-	int node_id;
+	int node_type;
 	int port;
 	int ST;
 	char address[17];
@@ -198,7 +199,8 @@ typedef struct tr_deliver_msg_t {
 typedef struct reconf_msg_t {
 	short type;
 	int ST;
-	int nodes;
+	int regular_nodes;
+	int cache_nodes;
 	char data[0];
 } reconf_msg;
 

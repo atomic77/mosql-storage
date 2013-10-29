@@ -48,7 +48,8 @@ static void mock_join(struct remote_mock* rm) {
 	char buffer[1024];
 	join_msg* msg = (join_msg*)buffer;
 	msg->type = NODE_JOIN;
-	msg->node_id = my_id;
+	//msg->node_id = my_id;
+	msg->node_type = REGULAR_NODE;
 	msg->port = my_port;
 	strcpy(msg->address, my_address);
 	fd = udp_socket_connect("127.0.0.1", 8888);
