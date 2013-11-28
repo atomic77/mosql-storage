@@ -237,7 +237,9 @@ static void handle_node_config(reconf_msg *rmsg) {
 		n++;
 	}
 	assert((rmsg->regular_nodes +rmsg->cache_nodes)- 
-			(NumberOfNodes + NumberOfCacheNodes) == 1);
+			(NumberOfNodes + NumberOfCacheNodes) == 1 ||
+			(rmsg->regular_nodes +rmsg->cache_nodes)- 
+			(NumberOfNodes + NumberOfCacheNodes) == 0);
 	NumberOfNodes = rmsg->regular_nodes;
 	NumberOfCacheNodes = rmsg->cache_nodes;
 }

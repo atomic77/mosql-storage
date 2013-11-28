@@ -121,6 +121,18 @@ struct peer* peer_get(int id) {
 	return hashtable_search(peers, &id);
 }
 
+struct peer* peer_get_by_info(const char* address, int port) {
+	int i;
+	struct peer *p;
+	for (i = 0; i < node_count; i++) {
+		p = peer_get(i);
+		if (strncmp(address, p->address, 17) == 0 && port == p->port) {
+			return p;
+		}
+	}
+	return NULL;
+	
+}
 
 char* peer_address(struct peer* p) {
 	return p->address;
