@@ -169,6 +169,7 @@ static void handle_transaction(void* value, size_t size) {
     flat_key_val* kv;
 	tr_deliver_msg* dmsg;
 
+	
 	LOG(VRB, ("handling transaction size %d\n",size));
 	dmsg = (tr_deliver_msg*)value;
 
@@ -176,6 +177,10 @@ static void handle_transaction(void* value, size_t size) {
 	ids = (tr_id*) dmsg->data;
 	for (i = 0; i < dmsg->aborted_count; i++) {
 		if (ids[i].node_id == NodeID) {	
+			if (commit_cb == NULL) {
+				printf("Learned a phantom tx, probably from a reincarnated node, skipping\n");
+				continue;
+			}
 			commit_cb(&ids[i], T_ABORTED);
 			abort_count++;
 		}
@@ -183,6 +188,10 @@ static void handle_transaction(void* value, size_t size) {
 
 	for (; i < dmsg->aborted_count + dmsg->committed_count; i++) {
 		if (ids[i].node_id == NodeID) {
+			if (commit_cb == NULL) {
+				printf("Learned a phantom tx, probably from a reincarnated node, skipping\n");
+				continue;
+			}
 			commit_cb(&ids[i], T_COMMITTED);
 			commit_count++;
 		}
