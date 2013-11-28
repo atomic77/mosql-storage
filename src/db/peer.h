@@ -27,6 +27,7 @@ typedef int (*consistent_hash)(unsigned int);
 void peer_add(int id, char* address, int port);
 void peer_add_cache_node(int id, char* address, int port);
 struct peer* peer_get(int id);
+struct peer* peer_get_by_info(const char* address, int port);
 int peer_count();
 char* peer_address(struct peer* p);
 int peer_port(struct peer* p);

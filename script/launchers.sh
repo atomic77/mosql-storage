@@ -72,8 +72,8 @@ launch_nodes() {
 	if [ "$1" = "valgrind" ]; then
 		prefix="valgrind $VALGRIND_OPTIONS "
 	fi
-	cmd="$prefix --ip-address 127.0.0.1 --port 5555 --paxos-config "
-		"config/paxos_config.cfg  --storage-config config/1.cfg --node-type 0"; 
+	cmd="$prefix bin/tapioca --ip-address 127.0.0.1 --port 5555 --paxos-config "
+	cmd="$cmd config/paxos_config.cfg  --storage-config config/1.cfg --node-type 0"; 
 	if [ "$2" = "log" ]; then
 		$cmd > /tmp/tapioca0.log 2> /tmp/tapioca0.log &
 	else

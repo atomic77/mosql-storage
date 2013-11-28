@@ -143,10 +143,28 @@ static void validate_buffer(char* buffer, size_t size) {
 	free(buffer);
 }
 
+// Add existing nodes to buffer. Also verify if we have already seen this 
+// ip/port. If a node crashed and tries to re-join, we want to give that 
+// node the same ID
+static void add_existing_nodes(join_msg *jmsg, struct evbuffer* payload) {
+	node_info n;
+	int i; 
+	struct peer *p;
+	
+	for (i=0; i < NumberOfNodes + NumberOfCacheNodes; i++) {
+		p = peer_get(i);
+		assert(p != NULL);
+		strncpy(n.ip, peer_address(p),17);
+		n.net_id = i;
+		n.port = peer_port(p);
+		n.node_type = peer_node_type(p);
+		evbuffer_add(payload, &n, sizeof(node_info));
+	}
+}
 
 static void handle_join_message(join_msg *jmsg) {
 	
-	int rv, written,i;
+	int rv, written,i, id;
 	paxos_msg pm;
 	time_t tm;
 	reconf_msg rmsg;
@@ -164,34 +182,30 @@ static void handle_join_message(join_msg *jmsg) {
 	rmsg.regular_nodes = NumberOfNodes ;
 	rmsg.cache_nodes = NumberOfCacheNodes;
 	
-	if(jmsg->node_type == REGULAR_NODE) {
-		rmsg.regular_nodes++;
-	} 
-	else {
-		rmsg.cache_nodes++;
-	}
-	
 	node_join_attempted = tm;
 	node_pending = 1;
-		
-	evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
 	
-	// Add existing nodes
-	for (i=0; i < NumberOfNodes + NumberOfCacheNodes; i++) {
-		p = peer_get(i);
-		assert(p != NULL);
-		strncpy(n.ip, peer_address(p),17);
-		n.net_id = i;
-		n.port = peer_port(p);
-		n.node_type = peer_node_type(p);
+	p = peer_get_by_info(jmsg->address, jmsg->port);
+	if (p == NULL) {
+		if(jmsg->node_type == REGULAR_NODE) {
+			rmsg.regular_nodes++;
+		} 
+		else {
+			rmsg.cache_nodes++;
+		}
+		evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
+		// Define the new node	
+		strncpy(n.ip, jmsg->address,17);
+		n.net_id = NumberOfNodes + NumberOfCacheNodes;
+		n.port = jmsg->port;
+		n.node_type = jmsg->node_type;
 		evbuffer_add(payload, &n, sizeof(node_info));
+	} else {
+		
+		evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
 	}
-	// Define the new node	
-	strncpy(n.ip, jmsg->address,17);
-	n.net_id = NumberOfNodes + NumberOfCacheNodes;
-	n.port = jmsg->port;
-	n.node_type = jmsg->node_type;
-	evbuffer_add(payload, &n, sizeof(node_info));
+	
+	add_existing_nodes(jmsg, payload);
 	
 	pm.type = submit;
 	pm.data_size = evbuffer_get_length(payload);
@@ -216,7 +230,10 @@ static void handle_reconfig(reconf_msg *rmsg) {
 		n++;
 	} 	
 	assert( (rmsg->regular_nodes + rmsg->cache_nodes) - 
-			(NumberOfNodes +  NumberOfCacheNodes) == 1); 
+			(NumberOfNodes +  NumberOfCacheNodes) == 1 ||
+			(rmsg->regular_nodes + rmsg->cache_nodes) - 
+			(NumberOfNodes +  NumberOfCacheNodes) == 0
+		  ); 
 	NumberOfNodes = rmsg->regular_nodes;
 	NumberOfCacheNodes = rmsg->cache_nodes;
 	node_pending = 0;
