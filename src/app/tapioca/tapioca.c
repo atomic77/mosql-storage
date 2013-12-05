@@ -39,18 +39,6 @@ static const char* paxos_config;
 
 static char filename[128];
 
-
-/*
-static struct option options[] = {
-	{'r', "recover", &recover, fla_opt},
-	{'j', "join", &join, fla_opt},
-	{'d', "dump", &dump, fla_opt},
-	{'h', "help", &help, fla_opt},
-	{0, 0, 0, int_opt}
-};
-*/
-
-
 struct option long_options[] =
 {
 		/* These options set a flag. */
@@ -140,23 +128,5 @@ int main(int argc, char* const argv[]) {
 	tcp_init(LocalPort);
 	tapioca_start_and_join();
 	
-	// Old logic
-	/*
-	if (join) {
-		printf("Join host %s:%d (%d) \n", argv[6], atoi(argv[7]), tcp_port);
-        tapioca_add_node(node_id, argv[6], atoi(argv[7]));
-        tcp_init(tcp_port);
-        tapioca_start_and_join();
-	} else {
-		if (tcp_init(tcp_port) == -1) {
-			printf("tcp_init(): failed\n");
-			return 1;
-		}
-		if (recover)
-			printf("Recover\n");
-		
-		tapioca_start(recover);
-	}
-		*/
 	return 0;
 }
