@@ -40,7 +40,7 @@ usage() {
 	exit 1
 }
 
-check_env () {
+check_env() {
 	if [ ! -e config/paxos_config.cfg ]; then
 		echo "Please run this script from the root mosql-storage install folder"
 		exit 1

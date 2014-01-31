@@ -454,7 +454,7 @@ inline int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2)
 {
 	return bptree_compar(bps, kv1->k, kv2->k, kv1->v, kv2->v,
-			kv1->vsize,kv2->vsize);
+			kv1->vsize,kv2->vsize, bps->num_fields);
 
 }
 
@@ -462,33 +462,53 @@ inline int bptree_compar_key_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos)
 {
 	char nb = '\0';
-	return bptree_compar(bps, x->keys[pos], kv->k, &nb, &nb, 1,1);
+	int num_fields = num_fields_used(bps, kv);
+	return bptree_compar(bps, x->keys[pos], kv->k, &nb, &nb, 1,1, num_fields);
 
 }
 
 inline int bptree_compar_key_val_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos)
 {
+	int num_fields = num_fields_used(bps, kv);
 	return bptree_compar(bps, x->keys[pos], kv->k, x->values[pos],
-			kv->v, x->value_sizes[pos],kv->vsize);
+			kv->v, x->value_sizes[pos],kv->vsize, num_fields);
 
 }
 
+/*@ Calculate the number of fields actually used in the referenced kv */
+inline int num_fields_used(bptree_session *bps, bptree_key_val *kv) {
+	int i, acc, fields = 0;
+	acc = 0;
+	bptree_field *bf = bps->bfield;
+	for (i = 1; i <= bps->num_fields; i++) {
+		acc += bf->f_sz;
+		bf++;
+		if (kv->ksize <= acc) return i;
+	}
+	
+	return bps->num_fields;
+	
+}
 
 // A generalization of the old compar function we used, but incorporating the
 // information we have provided about what fields are present and their
 // individual compar functions
 // TODO In order for non-unique secondary keys to work, we have to also compare
 // the values; this is a bit clunky now and probably should be rethought a bit
+// FIXME There is a problem here; we need to STOP going through the fields
+// if the key we are comparing against is only a partial key!
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
-		const void *v1, const void *v2, size_t vsize1, size_t vsize2)
+		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
+		int tot_fields)
 {
 	int i, res, offset;
 	bptree_field *bf = bps->bfield;
 	const unsigned char *a1 = k1;
 	const unsigned char *a2 = k2;
 	offset = 0;
-	for (i = 0; i < bps->num_fields; i++)
+	//for (i = 1; i <= bps->num_fields; i++)
+	for (i = 1; i <= tot_fields; i++)
 	{
 		const void *u = a1 + offset;
 		const void *v = a2 + offset;
@@ -834,6 +854,7 @@ void move_bptree_node_element(bptree_node *s, bptree_node *d,
 }
 
 /// TODO This is one place where we can probably use memcmp for performance
+/*
 inline int is_key_same(bptree_session *bps, bptree_node *x, int i, void *k)
 {
 	if (i < 0)
@@ -842,6 +863,7 @@ inline int is_key_same(bptree_session *bps, bptree_node *x, int i, void *k)
 	if (rv == 0) return 1;
 	return 0;
 }
+*/
 
 /*@ Returns the position in the node of the smallest key/val strictly larger
  * than or equal to kv; child_pos is the child position to be traversed
@@ -866,7 +888,6 @@ int find_key_position_in_node(bptree_session *bps, bptree_node *x,
 	int i = x->key_count-1;
 	if(i < 0) return 0;
 
-//	while(i >= 0 && bptree_compar_key_to_node(bps,x,kv,i) > 0)
 	while(i >= 0 && bptree_compar_key_to_node(bps,x,kv,i) > 0)
 	{
 		i--;
@@ -1031,6 +1052,19 @@ static int bptree_search_recursive(bptree_session *bps,
 		}
 		assert_parent_child(bps, x, n);
 		assert(is_valid_traversal(bps, x, n, i));
+/*		if(!is_valid_traversal(bps, x, n, i)) {
+			char a[128],b[128];
+			uuid_t failed_node;
+			uuid_unparse(x->self_key,a);
+			uuid_unparse(n->self_key,b);
+			printf("Failed on pos %d from node %s to node %s\n", i, a, b);
+			bptree_debug(bps,BPTREE_DEBUG_DUMP_RECURSIVELY, failed_node);
+			bptree_debug(bps,BPTREE_DEBUG_DUMP_GRAPHVIZ, failed_node);
+			bptree_debug(bps,BPTREE_DEBUG_DUMP_SEQUENTIALLY, failed_node);
+			assert(0==1);
+			
+		}
+		*/
 		rv = bptree_search_recursive(bps, n, kv);
 		free_node(&n);
 		return rv;
@@ -2171,6 +2205,9 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
  *    Two other cases:
  *    i = 0 or i = x->key_count are boundary cases
 	 */
+#ifndef DEFENSIVE_MODE
+	return 1;
+#endif
 
 	if(x->key_count <= 0) return 1;
 
@@ -2181,7 +2218,7 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
 		c = n->key_count -1;
 		rv = bptree_compar(bps, x->keys[0], n->keys[c],
 				x->values[0], n->values[c],
-				x->value_sizes[0], n->value_sizes[c]);
+				x->value_sizes[0], n->value_sizes[c], bps->num_fields);
 		if (rv <= 0) return 0;
 		return 1;
 	}
@@ -2191,7 +2228,7 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
 		c = i-1;
 		rv = bptree_compar(bps, x->keys[c], n->keys[0],
 				x->values[c], n->values[0],
-				x->value_sizes[c], n->value_sizes[0]);
+				x->value_sizes[c], n->value_sizes[0], bps->num_fields);
 	}
 	if (n->leaf)
 	{
@@ -2232,13 +2269,15 @@ int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i,
 		// In rare cases, y could be empty
 		rv = bptree_compar(bps, y->keys[y->key_count - 1], x->keys[i],
 				y->values[y->key_count - 1], x->values[i],
-				y->value_sizes[y->key_count - 1], x->value_sizes[i]);
+				y->value_sizes[y->key_count - 1], x->value_sizes[i], 
+				bps->num_fields);
 		if (rv >= 0) return 0; // i.e. R strictly less than S
 	}
 
 	rv = bptree_compar(bps, x->keys[i], new->keys[0],
 			x->values[i], new->values[0],
-			x->value_sizes[i], new->value_sizes[0]);
+			x->value_sizes[i], new->value_sizes[0], 
+			bps->num_fields);
 
 	if (y->leaf && rv != 0) return 0; // S should be in root and new[0]
 	if (!y->leaf && rv >= 0) return 0; // i.e. T strictly less than S
@@ -2260,7 +2299,7 @@ int is_cell_ordered(bptree_session *bps, bptree_node* y)
 		v1 = y->values[i];
 		v2 = y->values[i + 1];
 		rv = bptree_compar(bps, a, b, v1, v2,
-				y->value_sizes[i], y->value_sizes[i+1]);
+				y->value_sizes[i], y->value_sizes[i+1], bps->num_fields);
 		if (rv >= 0) return 0; // if two kev/values are the same we have a prob!
 	}
 

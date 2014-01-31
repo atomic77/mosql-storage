@@ -52,7 +52,7 @@
 #define TEST_TYPE_SEARCH 2
 
 //#define BPTREE_DEBUG 1
-#define DEFENSIVE_MODE
+//define DEFENSIVE_MODE
 //#define PARANOID_MODE
 //#define TRACE_MODE
 #define BPTREE_NODE_COMPRESSION 0
@@ -157,7 +157,8 @@ inline int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2);
 //int bptree_compar(bptree_session *bps, const void *b1, const void *b2);
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
-		const void *v1, const void *v2, size_t vsize1, size_t vsize2);
+		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
+		int tot_fields);
 inline void get_key_val_from_node(bptree_node *n, int i, bptree_key_val *kv);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
 bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
@@ -221,6 +222,9 @@ void bptree_key_value_to_string_kv(bptree_session *bps, bptree_key_val *kv,
 
 bptree_node * create_new_empty_bptree_node();
 bptree_node * create_new_bptree_node(bptree_session *bps);
+int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
+		void *data);
+
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);
 #endif
