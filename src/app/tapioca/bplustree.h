@@ -41,7 +41,7 @@
 
 #include <paxos.h>
 
-#define BPTREE_MIN_DEGREE 5 
+#define BPTREE_MIN_DEGREE 9 
 #define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
 #define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
 
@@ -117,6 +117,7 @@ typedef struct bptree_session {
 	uint16_t eof;
 	int32_t op_counter;
 	uint16_t num_fields;
+	uint16_t idx_len;
 	bptree_field *bfield;
 
 	// Moved from bptree_handle
