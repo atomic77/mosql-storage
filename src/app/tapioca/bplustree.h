@@ -52,8 +52,7 @@
 #define TEST_TYPE_SEARCH 2
 
 //#define BPTREE_DEBUG 1
-//define DEFENSIVE_MODE
-//#define PARANOID_MODE
+#define DEFENSIVE_MODE
 //#define TRACE_MODE
 #define BPTREE_NODE_COMPRESSION 0
 #define COMPRESSION_LEVEL 6 // 1 fastest; 9 best compression
@@ -128,14 +127,18 @@ typedef struct bptree_session {
 	bptree_node *cursor_node;
 	int tapioca_client_id;
 	int insert_count;
+	enum bptree_insert_flags insert_flags;
 } bptree_session;
 
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags,
 		uint32_t local_execution_id);
 
 int bptree_initialize_bpt_session(bptree_session *bps,
-		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags);
+		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags);
+
 int bptree_set_active_bpt_id(bptree_session *bps, tapioca_bptree_id bpt_id);
 
 int bptree_set_num_fields(bptree_session *bps, int16_t num_fields) ;
@@ -152,7 +155,7 @@ int bptree_update(bptree_session *bps,  void *k, int32_t ksize,
 		void *v, int32_t vsize);
 
 int bptree_insert(bptree_session *bps, void *k, int32_t ksize,
-		void *v, int32_t vsize, enum bptree_insert_flags insert_flags);
+		void *v, int32_t vsize);
 
 inline int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2);
@@ -225,6 +228,24 @@ bptree_node * create_new_empty_bptree_node();
 bptree_node * create_new_bptree_node(bptree_session *bps);
 int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 		void *data);
+
+
+/* Definitions that were in the main c file before that we want to be able
+to unit test */
+
+void shift_bptree_node_elements(bptree_node *x, int pos);
+
+void move_bptree_node_element(bptree_node *s, bptree_node *d,
+		int s_pos, int d_pos, int move);
+void shift_bptree_node_children(bptree_node *x, int pos);
+
+int find_position_in_node(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *pos);
+
+void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
+
+inline int bptree_compar_to_node(bptree_session *bps,
+	bptree_node *x, const bptree_key_val *kv, int pos);
 
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);

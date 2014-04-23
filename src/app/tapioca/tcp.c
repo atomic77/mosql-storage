@@ -932,9 +932,10 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 		evbuffer_remove(b,k, ksize);
 		evbuffer_remove(b,&vsize, sizeof(int32_t));
 		evbuffer_remove(b,v, vsize);
-		evbuffer_remove(b,&insert_flags, sizeof(enum bptree_insert_flags));
+		// FIXME We've moved this out of insert; clean it up elsewhere
+		//evbuffer_remove(b,&insert_flags, sizeof(enum bptree_insert_flags));
 
-		rv = bptree_insert(bps,k,ksize,v,vsize,insert_flags);
+		rv = bptree_insert(bps,k,ksize,v,vsize);//,insert_flags);
 
 		evbuffer_free(b);
 		if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
