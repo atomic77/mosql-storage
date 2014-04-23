@@ -81,7 +81,8 @@ static void get_cursor_result(tcp_handle *h, int *rv,
 
 int
 protocol_bptree_initialize_bpt_session_no_commit(void *p, uint16_t bpt_id,
-		enum bptree_open_flags open_flags, uint32_t execution_id)
+		enum bptree_open_flags open_flags, enum bptree_insert_flags insert_flags,
+		uint32_t execution_id)
 {
 	int rv;
 	int size = sizeof(uint16_t) + sizeof(enum bptree_open_flags)
@@ -103,7 +104,7 @@ protocol_bptree_initialize_bpt_session_no_commit(void *p, uint16_t bpt_id,
 
 int
 protocol_bptree_initialize_bpt_session(void *p, uint16_t bpt_id,
-		enum bptree_open_flags open_flags)
+		enum bptree_open_flags open_flags, enum bptree_insert_flags insert_flags)
 {
 	int rv;
 	int size = sizeof(uint16_t) + sizeof(enum bptree_open_flags);
@@ -168,7 +169,7 @@ protocol_bptree_set_field_info(void *p,
 }
 
 int protocol_bptree_insert(void *p, tapioca_bptree_id tbpt_id, void *k,
-		int ksize, void *v, int vsize, enum bptree_insert_flags insert_flags)
+		int ksize, void *v, int vsize )
 {
 	int rv;
 	int size = sizeof(tapioca_bptree_id) + sizeof(int32_t)*2
@@ -181,7 +182,6 @@ int protocol_bptree_insert(void *p, tapioca_bptree_id tbpt_id, void *k,
 	evbuffer_add(msg,k, ksize);
 	evbuffer_add(msg,&vsize, sizeof(int32_t));
 	evbuffer_add(msg,v, vsize);
-	evbuffer_add(msg,&insert_flags, sizeof(enum bptree_insert_flags));
 	CHECK_BUFFER_SIZE(msg, size);
 	rv = tcp_write_buffer(h->c, msg, h->b);
 

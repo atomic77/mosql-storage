@@ -42,7 +42,7 @@ protected:
 	const char *hostname;
 	int port;
 	bool DBUG;
-
+	bool local_storage = false; // whether we connect to an external or our own
     tapioca_handle* th;
 
 	void insertSampleData() {
@@ -53,7 +53,7 @@ protected:
 		{
 			sprintf(k,"a%03d",i);
 			sprintf(v,"v%03d",i);
-			rv = tapioca_bptree_insert(th, tbpt_id, &k, 5, &v, 5, BPTREE_INSERT_UNIQUE_KEY);
+			rv = tapioca_bptree_insert(th, tbpt_id, &k, 5, &v, 5);
 			ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
 			rv = tapioca_commit(th);
 			EXPECT_GE(0, rv);
@@ -65,15 +65,19 @@ protected:
 	tapioca_bptree_id createNewTree(tapioca_bptree_id tbpt_id) {
 		open_flags = BPTREE_OPEN_OVERWRITE;
 		bps = (bptree_session *) malloc(sizeof(bptree_session));
-		rv = tapioca_bptree_initialize_bpt_session(th, tbpt_id, open_flags);
+		rv = tapioca_bptree_initialize_bpt_session(th, tbpt_id, open_flags,
+												   BPTREE_INSERT_UNIQUE_KEY);
 		this->tbpt_id = tbpt_id;
 		EXPECT_EQ(tbpt_id, rv);
 	}
 	
 	virtual void SetUp() {
-		system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
-		system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
-		sleep(1);
+		if (local_storage) 
+		{
+			system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+			system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
+			sleep(1);
+		}
 		memset(k, 0,LARGE_BUFFER_SZ);
 		memset(v, 0,LARGE_BUFFER_SZ);
 		hostname = "127.0.0.1";
@@ -98,9 +102,12 @@ protected:
 		}
 
         tapioca_close(th);
-		system("killall -q cm tapioca example_acceptor example_proposer rec");
-		sleep(2);
-		system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+		if (local_storage) 
+		{
+			system("killall -q cm tapioca example_acceptor example_proposer rec");
+			sleep(2);
+			system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+		}
 	}
 
 };
