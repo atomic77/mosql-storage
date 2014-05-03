@@ -72,21 +72,46 @@ TEST_F(BptreeInterfaceTest, TestRandomBatchedInsert)
 
 TEST_F(BptreeInterfaceTest, TestUpdate)
 {
-	int i, j, n, r;
+	int i, j, n, r, sz;
 	tapioca_bptree_set_num_fields(th, tbpt_id, 1);
 	tapioca_bptree_set_field_info(th, tbpt_id, 0, 5, BPTREE_FIELD_COMP_STRNCMP);
 
-	char v2[10] = "abcd12345";
+	char k1[5];
+	char v2[10];
+	char v3[10];
+	// Check for pre and post commit
 	for (i = 1; i <= keys; i++)
 	{
-		sprintf(k,"%03d",i);
-		rv = tapioca_bptree_insert(th, tbpt_id, k, 5, v, 10);
+		sprintf(k1,"k%03d",i);
+		rv = tapioca_bptree_insert(th, tbpt_id, k1, 5, v, 10);
 		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
-		rv = tapioca_bptree_update(th, tbpt_id, k, 5, v2, 10);
+		memset(v2,0,10);
+		memset(v3,0,10);
+		sprintf(v2, "abcdef%03d", i);
+		rv = tapioca_bptree_update(th, tbpt_id, k1, 5, v2, 10);
 		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
+		rv = tapioca_bptree_search(th, tbpt_id, k1, 5, v3, &sz);
+		ASSERT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		ASSERT_EQ(sz,10);
+		ASSERT_EQ(strncmp(v2, v3, 10), 0);
 		rv = tapioca_commit(th);
 		EXPECT_GE(0, rv);
 		if (i % 250 == 0) printf("Updated %d keys\n", i);
+	}
+	
+	DBUG = true;
+	printf("Re-checking post-commit\n");
+	for (i = 1; i <= keys; i++)
+	{
+		sprintf(k1,"k%03d",i);
+		memset(v2,0,10);
+		memset(v3,0,10);
+		sprintf(v2, "abcdef%03d", i);
+		rv = tapioca_bptree_search(th, tbpt_id, k1, 5, v3, &sz);
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		EXPECT_EQ(sz,10);
+		EXPECT_EQ(strncmp(v2, v3, 10), 0);
+		tapioca_commit(th);
 	}
 }
 

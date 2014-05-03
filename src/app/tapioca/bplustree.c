@@ -85,6 +85,7 @@ inline int num_fields_used(bptree_session *bps, bptree_key_val *kv) ;
 // REQUIRES an externally-maintained UNIQUE execution_id to be provided!!
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags,
 		uint32_t local_execution_id)
 {
 	int rv;
@@ -93,6 +94,7 @@ int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 	bptree_set_active_bpt_id(bps, bpt_id);
 	bps->op_counter = 1;
 	bps->idx_len = 0;
+	bps->insert_flags = insert_flags;
 	bpm = read_meta_node(bps,&rv);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 	assert(bpm->bpt_id == bpt_id);
@@ -112,7 +114,8 @@ int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 }
 
 int bptree_initialize_bpt_session(bptree_session *bps,
-		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags)
+		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags)
 {
 	int rv, rv_c,attempts;
 	bptree_meta_node *bpm;
@@ -120,6 +123,7 @@ int bptree_initialize_bpt_session(bptree_session *bps,
 	bptree_set_active_bpt_id(bps, bpt_id);
 	bps->op_counter = 1;
 	bps->idx_len = 0;
+	bps->insert_flags = insert_flags;
 	rv_c = -1;
 	attempts = 0;
 	bps->cached_key_dirty = 1; // Expire anything that may be cached
@@ -324,10 +328,10 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 	
 	if (x->leaf)
 	{
-		if (bptree_compar_to_node(bps,x,kv,i) != 0 )
+		if (rv == BPTREE_OP_KEY_NOT_FOUND)
 		{
 			// Key was not found where it should have been; do nothing
-			return BPTREE_OP_KEY_NOT_FOUND;
+			return rv;
 		}
 		x->active[i] = 0;
 		return write_node(bps, x);
@@ -515,7 +519,7 @@ static int bptree_update_recursive(bptree_session *bps,
 	i = find_position_in_node(bps, x, kv, &rv);
 	if (x->leaf)
 	{
-		if (i >= x->key_count || i < 0)
+		/*if (i >= x->key_count || i < 0)
 		{
 			return BPTREE_OP_KEY_NOT_FOUND;
 		}
@@ -524,6 +528,14 @@ static int bptree_update_recursive(bptree_session *bps,
 			// Key was not found where it should have been; do nothing
 			return BPTREE_OP_KEY_NOT_FOUND;
 		}
+		*/
+		
+		if (rv == BPTREE_OP_KEY_NOT_FOUND)
+		{
+			// Key was not found where it should have been; do nothing
+			return rv;
+		}
+		
 		unsigned char *newval = realloc(x->values[i],kv->vsize);
 		assert(newval != NULL); // just in case we can't reallocate...
 		x->values[i] = newval;
@@ -777,40 +789,6 @@ inline int is_key_same(bptree_session *bps, bptree_node *x, int i, void *k)
 }
 */
 
-/*@ Returns the position in the node of the smallest key/val strictly larger
- * than or equal to kv; child_pos is the child position to be traversed
- * if this is a non-leaf node */
-/*
-int find_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv)
-{
-	int i = x->key_count-1;
-	if(i < 0) return 0;
-
-	while(i >= 0 && bptree_compar_key_val_to_node(bps,x,kv,i) > 0)
-	{
-		i--;
-	}
-	if(!x->leaf) i++;
-	return i;
-}
-
-//@ As with the above, but ignoring the value part, for search/update on key /
-int find_key_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv)
-{
-	int i = x->key_count-1;
-	if(i < 0) return 0;
-
-	while(i >= 0 && bptree_compar_key_to_node(bps,x,kv,i) > 0)
-	{
-		i--;
-	}
-	if(!x->leaf) i++;
-	return i;
-}
-*/
-
 // Experimental
 // Independent of key or key-value; check in bps
 // Returns true on match, false on closest match
@@ -819,68 +797,20 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 {
 	int i;
 	i = x->key_count-1;
-	int cmp;
+	int cmp, prev;
 	if(i < 0) return false;
+	cmp = prev = 1;
 
-	while(i >= 0 && (cmp = bptree_compar_to_node(bps,x,kv,i)) > 0)
+	while(i >= 0 && (cmp = bptree_compar_to_node(bps,x,kv,i)) >= 0)
 	{
 		i--;
+		prev = cmp;
 	}
-	//if(!x->leaf) i++;
 	i++;
-	*rv = (cmp == 0) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
+	*rv = (prev == 0) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
+	if(*rv == BPTREE_OP_KEY_FOUND && !x->leaf) i++;
 	return i;
 }
-
-/*int find_key_val_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv)
-{
-	int i = x->key_count-1;
-	if(i < 0) return 0;
-
-	if (kv->ksize == bps->idx_len) 
-	{	
-		while(i >= 0 && bptree_compar_key_val_to_node(bps,x,kv,i) > 0)
-		{
-			i--;
-		}
-		if(!x->leaf) i++;
-	}
-	else
-	{
-		// if we don't need to worry about the value, can use key-only compar
-		return find_key_position_in_node(bps, x, kv);
-	}
-	return i;
-}
-
-/*@ As with the above, but ignoring the value part, for search/update on key */
-/*
-int find_key_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv)
-{
-	int i = x->key_count-1;
-	if(i < 0) return 0;
-
-	if (kv->ksize == bps->idx_len) 
-	{
-		while(i >= 0 && bptree_compar_key_to_node(bps,x,kv,i) > 0)
-		{
-			i--;
-		}
-		if(!x->leaf) i++;
-	}
-	else
-	{
-		while(i >= 0 && bptree_compar_key_to_node(bps,x,kv,i) >= 0)
-		{
-			i--;
-		}
-		i++;
-	}
-	return i;
-}
-*/
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos)
 {
@@ -926,15 +856,22 @@ static int bptree_insert_nonfull(bptree_session *bps,
 
 	if (x->leaf)
 	{
-		// TODO De-uglify
-		if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && x->key_count > 0
+		/*
+		 * if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && x->key_count > 0
 				&& pos < x->key_count) {
+			
 			// If this is a non-unique index, we need to compare *ONLY* the key,
 			// not the value as well!
 			if (bptree_compar_to_node(bps,x,kv, pos) == 0)
 			{
 				return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 			}
+		}
+		*/
+		if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && 
+			rv == BPTREE_OP_KEY_FOUND)
+		{
+			return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 		}
 
 		// Shift values right
@@ -998,31 +935,30 @@ static int bptree_search_recursive(bptree_session *bps,
 #endif
 
 	i = find_position_in_node(bps, x, kv, &rv);
-	if (i < 0) i = 0;
 	if (x->leaf)
 	{
 		if (bps->cursor_node != NULL) free_node(&(bps->cursor_node));
 		bps->cursor_node = copy_node(x);
 		bps->cursor_pos = i;
 		bps->eof = 0;
+		/*
 		if (i >= x->key_count || i < 0)
 		{
 			kv->vsize = 0;
 			return BPTREE_OP_KEY_NOT_FOUND;
 		}
-		if (bptree_compar_to_node(bps,x,kv, i) == 0 && x->active[i])
+		*/
+		if(rv == BPTREE_OP_KEY_FOUND && x->active[i])
 		{
 			memcpy(kv->v, x->values[i], x->value_sizes[i]);
 			kv->vsize = x->value_sizes[i];
-			// Leave the cursor where it is if this is a partial key match
-			if (kv->ksize >= x->key_sizes[i]) bps->cursor_pos++;
-			return BPTREE_OP_KEY_FOUND;
+			//if (kv->ksize >= x->key_sizes[i]) bps->cursor_pos++;
 		}
 		else
 		{
 			kv->vsize = 0;
-			return BPTREE_OP_KEY_NOT_FOUND;
 		}
+		return rv;
 	}
 	else
 	{

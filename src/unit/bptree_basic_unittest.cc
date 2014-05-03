@@ -122,7 +122,12 @@ protected:
 		}
 		
 		/**************************************************
-		* Change value so exact k-v checks should return a position before */
+		* Change value so exact k-v checks should return a position before 
+		*/
+		// If this is a partial key match, then adjusting the value won't make
+		// any difference
+		//int shift = 1;
+		//if (kv->ksize < x->key_sizes[0]) shift = 0;
 		
 		sprintf(kv->v,"asdf");
 		
@@ -131,12 +136,8 @@ protected:
 		bps->insert_flags = BPTREE_INSERT_ALLOW_DUPES;
 		for (int i=0; i < keys; i++) {
 			pos = find_position_in_node(bps, x, &kv[i], &rv);
-			if (kv[i].ksize == x->key_sizes[positions[i]]) {
-				EXPECT_EQ(pos, positions[i] - 1);
-			}
-			else {
-				EXPECT_EQ(pos, positions[i]);
-			}
+			EXPECT_EQ(rv, BPTREE_OP_KEY_NOT_FOUND);
+			EXPECT_EQ(pos, positions[i]);
 		}
 		
 		/*********************************************/
@@ -226,7 +227,9 @@ TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
 TEST_F(BptreeBasicTest, BasicFindKeyInNode) {
 	int rv, num_elem = 7;
 	
-	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE);
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
+		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 1);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
@@ -253,7 +256,8 @@ TEST_F(BptreeBasicTest, BasicFindKeyInNode) {
 TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
 	int rv, num_elem = 7;
 	
-	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
@@ -261,6 +265,7 @@ TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
 		int32cmp);
 
 	int f = 5, s = 2;
+	ASSERT_GE(BPTREE_NODE_SIZE, f * s);
 	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
 	bptree_key_val kv[10];
 	char v[5] = "cccc"; 
@@ -289,7 +294,9 @@ TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
 TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
 	int rv, num_elem = 7;
 	
-	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE);
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
+		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
@@ -301,7 +308,7 @@ TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
 	bptree_key_val kv[5];
 	char v[5] = "cccc"; 
 	int c =0;
-	//printf("Checking: ");
+	// A set of partial keys to search against
 	for (int i=0; i < f; i++) {
 		int k = i * 10;
 		unsigned char *_k = (unsigned char *) malloc(50); // leak, my pretty!
@@ -320,7 +327,9 @@ TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
 
 TEST_F(BptreeBasicTest, BasicFindMissingElement) {
 	int rv, pos, num_elem = 7;
-	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE);
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY );
 	bptree_set_num_fields(bps, 1);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);

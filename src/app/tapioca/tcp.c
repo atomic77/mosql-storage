@@ -737,6 +737,7 @@ static void handle_bptree_initialize_bpt_session_no_commit(tcp_client* c,
 	bptree_session *bps = malloc(sizeof(bptree_session));
 	uint16_t bpt_id;
 	enum bptree_open_flags open_flags;
+	enum bptree_insert_flags insert_flags;
 	uint32_t execution_id;
 
 	struct evbuffer* b = evbuffer_copy(buffer);
@@ -746,6 +747,7 @@ static void handle_bptree_initialize_bpt_session_no_commit(tcp_client* c,
 	c_b->id = c->id;
 	evbuffer_remove(b,&bpt_id, sizeof(uint16_t));
 	evbuffer_remove(b,&open_flags, sizeof(enum bptree_open_flags));
+	evbuffer_remove(b,&insert_flags, sizeof(enum bptree_insert_flags));
 	evbuffer_remove(b,&execution_id, sizeof(uint32_t));
 
 	c_b->bpt_id = bpt_id;
@@ -758,7 +760,7 @@ static void handle_bptree_initialize_bpt_session_no_commit(tcp_client* c,
 	bps->cursor_node = NULL;
 
 	rv = bptree_initialize_bpt_session_no_commit(
-			bps, bpt_id, open_flags, execution_id);
+			bps, bpt_id, open_flags, insert_flags, execution_id);
 	if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
 	if (rv == BPTREE_OP_SUCCESS)
 	{
@@ -793,6 +795,7 @@ static void handle_bptree_initialize_bpt_session(tcp_client* c,
 	bptree_session *bps = malloc(sizeof(bptree_session));
 	uint16_t bpt_id;
 	enum bptree_open_flags open_flags;
+	enum bptree_insert_flags insert_flags;
 
 	struct evbuffer* b = evbuffer_copy(buffer);
 	transaction_set_get_cb(c->t, on_bptree_initialize_bpt_session, c);
@@ -801,6 +804,7 @@ static void handle_bptree_initialize_bpt_session(tcp_client* c,
 	c_b->id = c->id;
 	evbuffer_remove(b,&bpt_id, sizeof(uint16_t));
 	evbuffer_remove(b,&open_flags, sizeof(enum bptree_open_flags));
+	evbuffer_remove(b,&insert_flags, sizeof(enum bptree_insert_flags));
 
 	c_b->bpt_id = bpt_id;
 
@@ -808,7 +812,7 @@ static void handle_bptree_initialize_bpt_session(tcp_client* c,
 	bps->tapioca_client_id = c->id;
 	bps->t = c->t;
 
-	rv = bptree_initialize_bpt_session(bps, bpt_id, open_flags);
+	rv = bptree_initialize_bpt_session(bps, bpt_id, open_flags, insert_flags);
 	if (rv == BPTREE_OP_TAPIOCA_NOT_READY) return;
 	if (rv == BPTREE_OP_SUCCESS)
 	{
@@ -932,7 +936,7 @@ static void handle_bptree_insert(tcp_client* c,struct evbuffer* buffer)
 		evbuffer_remove(b,k, ksize);
 		evbuffer_remove(b,&vsize, sizeof(int32_t));
 		evbuffer_remove(b,v, vsize);
-		// FIXME We've moved this out of insert; clean it up elsewhere
+		// TODO We've moved this out of insert; clean it up elsewhere
 		//evbuffer_remove(b,&insert_flags, sizeof(enum bptree_insert_flags));
 
 		rv = bptree_insert(bps,k,ksize,v,vsize);//,insert_flags);

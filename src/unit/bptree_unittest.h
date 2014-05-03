@@ -42,7 +42,7 @@ protected:
 	const char *hostname;
 	int port;
 	bool DBUG;
-	bool local_storage = false; // whether we connect to an external or our own
+	bool local_storage = true; // whether we connect to an external or our own
     tapioca_handle* th;
 
 	void insertSampleData() {
@@ -74,7 +74,7 @@ protected:
 	virtual void SetUp() {
 		if (local_storage) 
 		{
-			system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+			system("killall -q -9 cm tapioca acceptor proposer rec");
 			system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
 			sleep(1);
 		}
