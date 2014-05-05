@@ -808,7 +808,12 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 	}
 	i++;
 	*rv = (prev == 0) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
-	if(*rv == BPTREE_OP_KEY_FOUND && !x->leaf) i++;
+	// FIXME Optmize this extra call to num_fields() out
+	if(*rv == BPTREE_OP_KEY_FOUND && !x->leaf 
+		&& bps->num_fields == num_fields_used(bps, kv))
+	{
+		i++;
+	}
 	return i;
 }
 

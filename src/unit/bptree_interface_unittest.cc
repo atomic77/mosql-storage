@@ -298,13 +298,10 @@ TEST_F(BptreeCursorTest, TestPartialKeyTraversal)
 		k1 = sample_without_replacement(arr, &n);
 		memcpy(k, &k1, sizeof(int64_t));
 		
-		if (k1 == 2123122) {
+		if (k1 == 4123122) {
 				printf("ready...");
-				char asdf[123];
-				gets(asdf);
 		}
 		rv = tapioca_bptree_search(th, tbpt_id, k, sizeof(int64_t), v, &vsize);
-		
 		
 		rv = tapioca_bptree_index_next(th, tbpt_id, k, &ksize, v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
@@ -312,7 +309,7 @@ TEST_F(BptreeCursorTest, TestPartialKeyTraversal)
 		EXPECT_EQ(vsize,4);
 		EXPECT_EQ(strcmp(v, "cccc"), 0);
 		EXPECT_EQ(*(int32_t*)(k+sizeof(int64_t)), 0);
-		memcpy(k, &k2, ksize);
+
 		
 		rv = tapioca_bptree_index_next(th, tbpt_id, k, &ksize, v, &vsize);
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
