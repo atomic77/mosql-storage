@@ -519,17 +519,6 @@ static int bptree_update_recursive(bptree_session *bps,
 	i = find_position_in_node(bps, x, kv, &rv);
 	if (x->leaf)
 	{
-		/*if (i >= x->key_count || i < 0)
-		{
-			return BPTREE_OP_KEY_NOT_FOUND;
-		}
-		if (bptree_compar_to_node(bps,x,kv, i) != 0)
-		{
-			// Key was not found where it should have been; do nothing
-			return BPTREE_OP_KEY_NOT_FOUND;
-		}
-		*/
-		
 		if (rv == BPTREE_OP_KEY_NOT_FOUND)
 		{
 			// Key was not found where it should have been; do nothing
@@ -551,6 +540,7 @@ static int bptree_update_recursive(bptree_session *bps,
 
 		if (i <= x->key_count && i > 0)
 		{
+			// FIXME Refactor out reference to bptree_compar
 			if (bptree_compar_to_node(bps,x,kv, i-1) == 0)
 			{
 				unsigned char *newval = realloc(x->values[i-1],kv->vsize);
@@ -702,7 +692,7 @@ static int bptree_split_child(bptree_session *bps,
 	assert(is_cell_ordered(bps, x));
 	assert(is_cell_ordered(bps, y));
 	assert(is_cell_ordered(bps, n));
-	assert(are_split_cells_valid(bps, x,i,y,n));
+	are_split_cells_valid(bps, x,i,y,n); // Assertions called inside
 #endif
 
 #ifdef TRACE_MODE
@@ -791,14 +781,16 @@ inline int is_key_same(bptree_session *bps, bptree_node *x, int i, void *k)
 
 // Experimental
 // Independent of key or key-value; check in bps
-// Returns true on match, false on closest match
 int find_position_in_node(bptree_session *bps, bptree_node *x,
 		bptree_key_val *kv, int *rv)
 {
 	int i;
-	i = x->key_count-1;
 	int cmp, prev;
-	if(i < 0) return false;
+	i = x->key_count-1;
+	if(i < 0) {
+		*rv = BPTREE_OP_KEY_NOT_FOUND;
+		return 0;
+	}
 	cmp = prev = 1;
 
 	while(i >= 0 && (cmp = bptree_compar_to_node(bps,x,kv,i)) >= 0)
@@ -861,25 +853,12 @@ static int bptree_insert_nonfull(bptree_session *bps,
 
 	if (x->leaf)
 	{
-		/*
-		 * if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && x->key_count > 0
-				&& pos < x->key_count) {
-			
-			// If this is a non-unique index, we need to compare *ONLY* the key,
-			// not the value as well!
-			if (bptree_compar_to_node(bps,x,kv, pos) == 0)
-			{
-				return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
-			}
-		}
-		*/
 		if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && 
 			rv == BPTREE_OP_KEY_FOUND)
 		{
 			return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 		}
 
-		// Shift values right
 		shift_bptree_node_elements(x,pos);
 		copy_key_val_to_node(x, kv, pos);
 
@@ -908,6 +887,7 @@ static int bptree_insert_nonfull(bptree_session *bps,
 			if (rv != BPTREE_OP_SUCCESS) return rv;
 			uuid_t new_node_id;
 			uuid_copy(new_node_id, x->children[pos+1]);
+			// FIXME Refactor out reference to bptree_compar
 			if(bptree_compar_to_node(bps, x, kv, pos) < 0) pos++;
 
 			n2 = read_node(bps, x->children[pos], &rv);
@@ -2151,7 +2131,8 @@ int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i,
 				y->values[y->key_count - 1], x->values[i],
 				y->value_sizes[y->key_count - 1], x->value_sizes[i], 
 				bps->num_fields);
-		if (rv >= 0) return 0; // i.e. R strictly less than S
+		//if (rv >= 0) return 0; // i.e. R strictly less than S
+		assert(rv < 0);
 	}
 
 	rv = bptree_compar(bps, x->keys[i], n->keys[0],
@@ -2159,11 +2140,16 @@ int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i,
 			x->value_sizes[i], n->value_sizes[0], 
 			bps->num_fields);
 
-	if (y->leaf && rv != 0) return 0; // S should be in root and new[0]
-	if (!y->leaf && rv >= 0) return 0; // i.e. T strictly less than S
+	// Rewrite these checks as asserts
+	//if (y->leaf && rv != 0) return 0; // S should be in root and new[0]
+	//if (!y->leaf && rv >= 0) return 0; // i.e. T strictly less than S
+	assert (y->leaf ? rv == 0 : rv < 0); // S should be in root and new[0]
+//	assert (!y->leaf && rv < 0); // i.e. T strictly less than S
 
-	if (y->key_count != BPTREE_MIN_DEGREE-1 ||
-			n->key_count != BPTREE_MIN_DEGREE -1 + n->leaf) return 0;
+//	if (y->key_count != BPTREE_MIN_DEGREE-1 ||
+	//		n->key_count != BPTREE_MIN_DEGREE -1 + n->leaf) return 0;
+	assert(y->key_count == BPTREE_MIN_DEGREE-1 );
+	assert(n->key_count == BPTREE_MIN_DEGREE -1 + n->leaf);
 	return 1;
 }
 //inline
