@@ -42,7 +42,7 @@ protected:
 	const char *hostname;
 	int port;
 	bool DBUG;
-	bool local_storage = true; // whether we connect to an external or our own
+	bool local_storage; // whether we connect to an external or our own
     tapioca_handle* th;
 
 	void insertSampleData() {
@@ -72,6 +72,7 @@ protected:
 	}
 	
 	virtual void SetUp() {
+		local_storage = true;
 		if (local_storage) 
 		{
 			system("killall -q -9 cm tapioca acceptor proposer rec");
