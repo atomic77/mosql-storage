@@ -2166,7 +2166,8 @@ int is_cell_ordered(bptree_session *bps, bptree_node* y)
 		v2 = y->values[i + 1];
 		rv = bptree_compar(bps, a, b, v1, v2,
 				y->value_sizes[i], y->value_sizes[i+1], bps->num_fields);
-		if (rv >= 0) return 0; // if two kev/values are the same we have a prob!
+		//if (rv >= 0) return 0; // if two kev/values are the same we have a prob!
+		assert(rv < 0); // if two kev/values are the same we have a prob!
 	}
 
 	return 1;
