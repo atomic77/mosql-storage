@@ -2078,7 +2078,8 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
 		rv = bptree_compar(bps, x->keys[0], n->keys[c],
 				x->values[0], n->values[c],
 				x->value_sizes[0], n->value_sizes[c], bps->num_fields);
-		if (rv <= 0) return 0;
+		assert (rv > 0);
+		//if (rv <= 0) return 0;
 		return 1;
 	}
 	else
@@ -2091,10 +2092,12 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
 	}
 	if (n->leaf)
 	{
+		assert(rv == 0);
 		if (rv != 0) return 0;
 	}
 	else
 	{
+		assert(rv < 0);
 		if (rv >= 0) return 0;
 	}
 
