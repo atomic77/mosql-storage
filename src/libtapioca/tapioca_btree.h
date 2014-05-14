@@ -93,7 +93,8 @@ typedef struct bptree_mget_result {
 
 enum bptree_insert_flags
 {
-	BPTREE_INSERT_ALLOW_DUPES, /* Permit duplicate key values in b+tree */
+	BPTREE_INSERT_ALLOW_DUPES, /* Permit duplicate key values in b+tree;
+								key-value still must be unique */
 	BPTREE_INSERT_UNIQUE_KEY /* A duplicate key insert is treated as an error
 								condition and current tx rolled back! */
 };
@@ -123,10 +124,14 @@ int strncmp_wrap(const void *i1, const void *i2, size_t sz);
 
 tapioca_bptree_id tapioca_bptree_initialize_bpt_session_no_commit(
 		tapioca_handle *th, tapioca_bptree_id tbpt_id,
-		enum bptree_open_flags open_flags, uint32_t execution_id);
+		enum bptree_open_flags open_flags, 
+		enum bptree_insert_flags insert_flags,
+		uint32_t execution_id);
 
 tapioca_bptree_id tapioca_bptree_initialize_bpt_session( tapioca_handle *th,
-		tapioca_bptree_id tbpt_id, enum bptree_open_flags open_flags);
+		tapioca_bptree_id tbpt_id, 
+		enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags);
 
 int tapioca_bptree_set_num_fields(tapioca_handle *th,
 		tapioca_bptree_id tbpt_id, int16_t num_fields);
@@ -136,8 +141,7 @@ int tapioca_bptree_set_field_info(void *p,
 		int16_t field_sz, enum bptree_field_comparator comparator);
 
 int tapioca_bptree_insert(tapioca_handle *th, tapioca_bptree_id tbpt_id,
-		void *k, int ksize, void *v, int vsize,
-		enum bptree_insert_flags insert_flags);
+		void *k, int ksize, void *v, int vsize);
 
 int tapioca_bptree_update(tapioca_handle *th, tapioca_bptree_id tbpt_id,
 		void *k, int ksize, void *v, int vsize);

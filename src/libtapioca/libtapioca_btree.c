@@ -24,10 +24,11 @@
 
 tapioca_bptree_id
 tapioca_bptree_initialize_bpt_session_no_commit(tapioca_handle *th,
-	tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags, uint32_t execution_id)
+	tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags, 
+	enum bptree_insert_flags insert_flags, uint32_t execution_id)
 {
 	int rv = protocol_bptree_initialize_bpt_session_no_commit(th,
-			   bpt_id, open_flags, execution_id);
+			   bpt_id, open_flags, insert_flags, execution_id);
 
 	if (rv == 1) return bpt_id;
 	return -1;
@@ -35,9 +36,11 @@ tapioca_bptree_initialize_bpt_session_no_commit(tapioca_handle *th,
 
 tapioca_bptree_id
 tapioca_bptree_initialize_bpt_session(tapioca_handle *th,
-		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags)
+		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
+		enum bptree_insert_flags insert_flags)
 {
-	int rv = protocol_bptree_initialize_bpt_session(th, bpt_id, open_flags);
+	int rv = protocol_bptree_initialize_bpt_session(th, bpt_id, open_flags,
+			insert_flags);
 	if (rv == 1) return bpt_id;
 	return -1;
 }
@@ -58,9 +61,9 @@ int tapioca_bptree_set_field_info(tapioca_handle *th,
 
 
 int tapioca_bptree_insert(tapioca_handle *th, tapioca_bptree_id tbpt_id,
-	void *k,int32_t ksize,void *v, int32_t vsize, enum bptree_insert_flags insert_flags)
+	void *k,int32_t ksize,void *v, int32_t vsize)
 {
-	return protocol_bptree_insert(th,tbpt_id,k,ksize,v,vsize,insert_flags);
+	return protocol_bptree_insert(th,tbpt_id,k,ksize,v,vsize);
 
 }
 

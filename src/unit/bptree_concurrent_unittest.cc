@@ -75,7 +75,7 @@ void* thr_tapioca_bptree_traversal_test(void* data)
 
 	th = tapioca_open(s->hostname, s->port);
 	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-			BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+			BPTREE_OPEN_CREATE_IF_NOT_EXISTS, BPTREE_INSERT_UNIQUE_KEY);
 	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 
@@ -156,7 +156,7 @@ void *thr_tapioca_bptree_search_test(void *data)
 
 	th = tapioca_open(s->hostname, s->port);
 	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-			BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+			BPTREE_OPEN_CREATE_IF_NOT_EXISTS, BPTREE_INSERT_UNIQUE_KEY);
 	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 
@@ -225,14 +225,14 @@ void *thr_tapioca_bptree_insert_test(void *data)
 	{
 		th = tapioca_open(s->hostname, s->port);
 		tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-				BPTREE_OPEN_OVERWRITE);
+				BPTREE_OPEN_OVERWRITE, BPTREE_INSERT_UNIQUE_KEY);
 		EXPECT_EQ(tbpt_id, s->seed);
 	}
 	else
 	{
 		th = tapioca_open(s->hostname, s->port);
 		tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-				BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+				BPTREE_OPEN_CREATE_IF_NOT_EXISTS, BPTREE_INSERT_UNIQUE_KEY);
 		EXPECT_EQ(tbpt_id, s->seed);
 	}
 	if (th == NULL)
@@ -267,8 +267,7 @@ void *thr_tapioca_bptree_insert_test(void *data)
 		do
 		{
 			//printf("Inserting k/v %s / %s \n", kk, vv);
-			rv = tapioca_bptree_insert(th, tbpt_id, kk, 10, vv, 10,
-					BPTREE_INSERT_UNIQUE_KEY);
+			rv = tapioca_bptree_insert(th, tbpt_id, kk, 10, vv, 10);
 			EXPECT_GE(rv, BPTREE_OP_SUCCESS);
 			rv = tapioca_commit(th);
 			if (rv < 0)
@@ -360,7 +359,7 @@ TEST_F (BptreeConcurrencyTest, TestInsertAndTraverse)
 		tapioca_handle *th;
 		th = tapioca_open("127.0.0.1", 5555);
 		tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-				BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+				BPTREE_OPEN_CREATE_IF_NOT_EXISTS, BPTREE_INSERT_UNIQUE_KEY);
 		tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 		tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 		//		dump_tapioca_bptree_contents(th,tbpt_id,dbug,0);
@@ -429,7 +428,7 @@ TEST_F(BptreeConcurrencyTest, TestInsertAndSearch)
 		tapioca_handle *th;
 		th = tapioca_open("127.0.0.1", 5555);
 		tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, seed,
-				BPTREE_OPEN_ONLY);
+				BPTREE_OPEN_ONLY, BPTREE_INSERT_UNIQUE_KEY);
 		tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 		tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 		//		dump_tapioca_bptree_contents(th, tbpt_id,dbug,0);
@@ -496,7 +495,7 @@ TEST_F(BptreeConcurrencyTest, TestInsertThenSearch)
 		tapioca_handle *th;
 		th = tapioca_open("127.0.0.1", 5555);
 		tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, s->seed,
-				BPTREE_OPEN_CREATE_IF_NOT_EXISTS);
+				BPTREE_OPEN_CREATE_IF_NOT_EXISTS, BPTREE_INSERT_UNIQUE_KEY);
 		tapioca_bptree_set_num_fields(th,tbpt_id, 1);
 		tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 		//		dump_tapioca_bptree_contents(th, tbpt_id,dbug,0);

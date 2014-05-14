@@ -7,8 +7,9 @@ PAXOS_DIR=~/local/libpaxos
 KILL="n"
 NOREC="n"
 NOPROP="n"
-DELAY=2
+DELAY=1
 VALGRIND="n"
+TMPFOLDER=/tmp
 LOG="n"
 
 SHORTOPTS="hckrp:d:ovl"
@@ -118,8 +119,8 @@ fi
 
 if [ "$CLEARDB" = "y" ]; then
 	echo "Clearing DB folders before launch"
-	rm -rf /tmp/acceptor_*
-	rm -rf /tmp/rlog_*
+	rm -rf $TMPFOLDER/acceptor_*
+	rm -rf $TMPFOLDER/rlog_*
 fi
 
 #set -x

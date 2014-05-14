@@ -377,7 +377,6 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 				*rv = rv2;
 				return NULL;
 			}
-			assert_parent_child(bps, n, child );
 			if (dump_to_text && c < n->key_count)
 			{
 				int i;
