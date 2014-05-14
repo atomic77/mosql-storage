@@ -198,11 +198,6 @@ static void handle_transaction(void* value, size_t size, iid_t iid) {
 }
 
 
-static void handle_join_message(join_msg* m) {
-	peer_add(m->node_id, m->address, m->port);
-	NumberOfNodes++;
-}
-
 
 static void on_deliver(void* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
@@ -215,7 +210,10 @@ static void on_deliver(void* value, size_t size, iid_t iid,
 			handle_transaction(value, size, iid);
 			break;
 		case NODE_JOIN:
-			handle_join_message(value);
+			//handle_join_message(value);
+			break;
+		case RECONFIG:
+			//handle_node_config((reconf_msg *)value);
 			break;
 	}
 }
@@ -310,15 +308,14 @@ bind_new_listener(struct event_base* b, const char *addr, int port,
 }
 
 
-static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_conf, int port) {
+static void init(int acceptor_id, const char* paxos_conf) {
 	char log_path[128], rec_db_path[128];
 
 // 	struct event request_ev;
 
 	tapioca_init_defaults();
 	signal(SIGINT, sigint);
-	load_config_file(tapioca_conf);
-	
+
 	aid = acceptor_id;
 	base = event_base_new();
 	
@@ -354,13 +351,14 @@ static void init(int acceptor_id, const char* paxos_conf, const char* tapioca_co
 
 int main(int argc, char const *argv[]) {
 	int port = 12345;
-	if (argc < 4 || argc > 5) {
-		printf("Usage: %s <acceptor id> <paxos config> <tapioca config> <port>\n", argv[0]);
+	/* TODO Implement getopt-like parameter parsing */
+	if (argc < 3 || argc > 4) {
+		printf("Usage: %s <acceptor id> <paxos config> \n", argv[0]);
+		printf("Currently hard-coded to listen on relevant acceptor port + 100"
+			   " and write to /tmp/rlog_<acc_id>\n");
 		return 1;
 	} else {
-		if (argc == 5)
-			port = atoi(argv[4]);
-		init(atoi(argv[1]), argv[2], argv[3], port);
+		init(atoi(argv[1]), argv[2]);
 		return 0;
 	}
 }

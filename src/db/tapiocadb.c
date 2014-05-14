@@ -79,7 +79,7 @@ static void sigint(int sig) {
 }
 
 
-int tapioca_init(int node_id, const char* tconfig, const char* pconfig) {
+int tapioca_init(const char* tconfig, const char* pconfig) {
 	struct timeval now;
 
 	tapioca_init_defaults();
@@ -103,7 +103,6 @@ int tapioca_init(int node_id, const char* tconfig, const char* pconfig) {
 	setenv("EVENT_NOKQUEUE", "1", 1);
 	#endif
 	
-	NodeID = node_id;
 	load_config_file(tapioca_config);
     
 	base = event_init();
@@ -131,8 +130,7 @@ void tapioca_start_and_join(void) {
 	assert(rv >= 0);
 	rv = cproxy_init(paxos_config, base);
 	assert(rv >= 0);
-	p = peer_get(NodeID);
-	cproxy_submit_join(NodeID, peer_address(p), peer_port(p));
+	cproxy_submit_join(NodeType, LocalIpAddress, LocalPort);
 	event_dispatch();
 }
 

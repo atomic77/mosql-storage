@@ -37,6 +37,7 @@ static struct hashtable* recnodes = NULL;
 struct peer {
 	int port;
 	char address[MAX_IP_LEN];
+	int node_type;
 };
 
 
@@ -87,6 +88,9 @@ void peer_add_cache_node(int id, char* address, int port) {
 	assert(rv != 0);
 }
 
+int peer_node_type(struct peer* p) {
+	return p->node_type;
+}
 
 void peer_add_recnode(int id, char* address, int port) {
 	int rv;
@@ -117,6 +121,18 @@ struct peer* peer_get(int id) {
 	return hashtable_search(peers, &id);
 }
 
+struct peer* peer_get_by_info(const char* address, int port) {
+	int i;
+	struct peer *p;
+	for (i = 0; i < node_count; i++) {
+		p = peer_get(i);
+		if (strncmp(address, p->address, 17) == 0 && port == p->port) {
+			return p;
+		}
+	}
+	return NULL;
+	
+}
 
 char* peer_address(struct peer* p) {
 	return p->address;

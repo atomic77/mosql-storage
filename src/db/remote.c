@@ -155,8 +155,7 @@ int remote_init(struct evpaxos_config *lp_config, struct event_base *base) {
 	int i;
 	struct peer* p;
 	
-	p = peer_get(NodeID);
-	recv_sock = udp_bind_fd(peer_port(p));
+	recv_sock = udp_bind_fd(LocalPort);
 	socket_make_non_block(recv_sock);
 	send_sock = udp_socket();
 	socket_make_non_block(send_sock);
@@ -167,13 +166,11 @@ int remote_init(struct evpaxos_config *lp_config, struct event_base *base) {
 	
 	// Connect to each rec (one per acceptor). For now assume rec is on
 	// acceptor port + 100
-	num_recs = 1; // lp_config->acceptors_count; connect to first one only
+	num_recs = evpaxos_acceptor_count(lp_config);
 	last_rec = 0;
 	
 	acc_bevs = malloc(num_recs * sizeof(struct bufferevent *));
 	for (i=0; i<num_recs; i++) {
-//		acc_bevs[i] = rec_connect(base, lp_config->acceptors[i].address_string,
-//			lp_config->acceptors[i].port+100);
 		acc_bevs[i] = rec_connect(base, evpaxos_acceptor_address(lp_config, i).sin_addr.s_addr,
 								  evpaxos_acceptor_listen_port(lp_config,0)+100);
 	}

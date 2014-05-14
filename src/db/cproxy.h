@@ -27,7 +27,7 @@ typedef void(*cproxy_commit_cb)(tr_id*, int);
 
 int cproxy_init(const char* paxos_config, struct event_base *base);
 int cproxy_submit(char* value, size_t size, cproxy_commit_cb cb);
-int cproxy_submit_join(int id, char* address, int port);
+int cproxy_submit_join(int node_type, char* address, int port);
 int cproxy_current_st();
 void cproxy_cleanup();
 

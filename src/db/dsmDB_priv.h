@@ -66,6 +66,8 @@ extern "C" {
 #define TEST_UPDATE_SP 30
 #define TEST_READ_SP   31
 
+#define REGULAR_NODE 0
+#define CACHE_NODE 1
 
 /*** KEY - VALUE ***/
 typedef struct db_key_t {
@@ -91,6 +93,7 @@ typedef struct node_info_t {
     char ip[17];
     int port;
     int net_id;
+	int node_type;
 } node_info;
 
 
@@ -139,6 +142,7 @@ typedef struct flat_key_val_t {
 // message type recognized by the certifier
 #define TRANSACTION_SUBMIT 1 	// tr_submit_msg
 #define NODE_JOIN 2				// join_msg
+#define RECONFIG 3				// reconf_msg
 
 /*
     data contains:
@@ -164,10 +168,9 @@ typedef struct tr_submit_msg_t {
 //#define TR_MAX_MSG_SIZE 8192
 //#define TR_MAX_DATA_SIZE (TR_MAX_MSG_SIZE - sizeof(tr_submit_msg))
 
-
 typedef struct join_msg_t {
 	short type;
-	int node_id;
+	int node_type;
 	int port;
 	int ST;
 	char address[17];
@@ -187,6 +190,19 @@ typedef struct tr_deliver_msg_t {
     int updateset_count;
     char data[0];
 } tr_deliver_msg;
+
+/* The certifier now sends out a reconfiguration message with the full state of
+ the system; data contains:
+    array of struct node_info
+ */
+
+typedef struct reconf_msg_t {
+	short type;
+	int ST;
+	int regular_nodes;
+	int cache_nodes;
+	char data[0];
+} reconf_msg;
 
 //#define DL_MAX_DATA_SIZE 8192
 

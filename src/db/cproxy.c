@@ -108,7 +108,7 @@ static struct bufferevent* cm_connect(struct event_base* b,
 }
 
 int cproxy_init(const char* paxos_config, struct event_base *b) {
-	struct learner *l;
+	struct evlearner *l;
 	ST = 0;
 	base = b; 
 	cert_bev = cm_connect(base, LeaderIP, LeaderPort);
@@ -131,12 +131,12 @@ int cproxy_submit(char* value, size_t size, cproxy_commit_cb cb) {
 }
 
 
-int cproxy_submit_join(int id, char* address, int port) {
+int cproxy_submit_join(int node_type, char* address, int port) {
 	int rv;
 	join_msg j;
 	
 	j.type = NODE_JOIN;
-	j.node_id = id;
+	j.node_type = node_type;
 	j.port = port;
 	strncpy(j.address, address, 17);
 	
@@ -169,6 +169,7 @@ static void handle_transaction(void* value, size_t size) {
     flat_key_val* kv;
 	tr_deliver_msg* dmsg;
 
+	
 	LOG(VRB, ("handling transaction size %d\n",size));
 	dmsg = (tr_deliver_msg*)value;
 
@@ -176,6 +177,10 @@ static void handle_transaction(void* value, size_t size) {
 	ids = (tr_id*) dmsg->data;
 	for (i = 0; i < dmsg->aborted_count; i++) {
 		if (ids[i].node_id == NodeID) {	
+			if (commit_cb == NULL) {
+				printf("Learned a phantom tx, probably from a reincarnated node, skipping\n");
+				continue;
+			}
 			commit_cb(&ids[i], T_ABORTED);
 			abort_count++;
 		}
@@ -183,6 +188,10 @@ static void handle_transaction(void* value, size_t size) {
 
 	for (; i < dmsg->aborted_count + dmsg->committed_count; i++) {
 		if (ids[i].node_id == NodeID) {
+			if (commit_cb == NULL) {
+				printf("Learned a phantom tx, probably from a reincarnated node, skipping\n");
+				continue;
+			}
 			commit_cb(&ids[i], T_COMMITTED);
 			commit_count++;
 		}
@@ -212,17 +221,37 @@ static void handle_transaction(void* value, size_t size) {
 	delivered_tx += dmsg->aborted_count + dmsg->committed_count;
 }
 
-
-static void handle_join_message(join_msg* m) {
-	if (m->node_id != NodeID) {
-		peer_add(m->node_id, m->address, m->port);
-	} else {
-		printf("Joined with ST: %d\n", m->ST);
-		ST = m->ST;
+static void handle_node_config(reconf_msg *rmsg) {
+	int i;
+	node_info *n;
+	n = (node_info *) rmsg->data;
+	printf("Got node reconfig: %d nodes %d cache nodes\n",
+		   rmsg->regular_nodes, rmsg->cache_nodes);
+	
+	for (i = 0; i < rmsg->cache_nodes + rmsg->regular_nodes; i++) {
+		struct peer *p = peer_get(n->net_id);
+		if (p == NULL) {
+			if (n->node_type == REGULAR_NODE) {
+				peer_add(n->net_id,n->ip, n->port);
+			} else {
+				peer_add_cache_node(n->net_id,n->ip,n->port);
+			}
+		}
+		if(n->port == LocalPort	&& 
+			strncmp(n->ip, LocalIpAddress,17) == 0) {
+			// This is us
+			assert(NodeID == -1 || NodeID == n->net_id);
+			NodeID = n->net_id;
+		}
+		n++;
 	}
-	NumberOfNodes++;
+	assert((rmsg->regular_nodes +rmsg->cache_nodes)- 
+			(NumberOfNodes + NumberOfCacheNodes) == 1 ||
+			(rmsg->regular_nodes +rmsg->cache_nodes)- 
+			(NumberOfNodes + NumberOfCacheNodes) == 0);
+	NumberOfNodes = rmsg->regular_nodes;
+	NumberOfCacheNodes = rmsg->cache_nodes;
 }
-
 
 struct header {
 	short type;
@@ -238,7 +267,11 @@ static void on_deliver(char* value, size_t size, iid_t iid,
 			handle_transaction(value, size);
 			break;
 		case NODE_JOIN:
-			handle_join_message((join_msg *)value);
+			//handle_join_message((join_msg *)value);
+			printf("We shouldn't be delivering NODE_JOIN messages!\n");
+			break;
+		case RECONFIG:
+			handle_node_config((reconf_msg *)value);
 			break;
 		default:
 			printf("handle_request: dropping message of unkown type\n");

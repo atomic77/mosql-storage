@@ -25,13 +25,14 @@
 #include "queue.h"
 #include "socket_util.h"
 #include "util.h"
+#include "peer.h"
 
 
 #include <paxos.h>
 #include <libpaxos/libpaxos_messages.h>
-//#include "libpaxos_messages.h"
 #include "msg.h"
 #include "tapiocadb.h"
+#include "hashtable.h"
 
 
 #include <stdlib.h>
@@ -44,6 +45,7 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <event2/listener.h>
 #include <event2/event.h>
@@ -62,11 +64,18 @@ static unsigned int committed_tx = 0;
 static unsigned int max_tx_size = 0;
 static unsigned int max_buffer_size = 0;
 static unsigned int max_buffer_count = 0;
+static unsigned int node_pending = 0;
+static time_t node_join_attempted;
 static time_t first_submitted;
 static time_t last_submitted;
 static int max_count = 0;
 
 static unsigned char *read_buffer;
+
+struct header {
+	short type;
+	char data[0];
+};
 
 
 static void print_stats();
@@ -79,7 +88,6 @@ struct evpaxos_config *conf;
 
 static int bytes_left;
 static struct timeval timeout_tv;
-
 
 // Submit committed transaction to paxos
 static int submit_transaction(tr_submit_msg *t) {
@@ -135,22 +143,102 @@ static void validate_buffer(char* buffer, size_t size) {
 	free(buffer);
 }
 
+// Add existing nodes to buffer. Also verify if we have already seen this 
+// ip/port. If a node crashed and tries to re-join, we want to give that 
+// node the same ID
+static void add_existing_nodes(join_msg *jmsg, struct evbuffer* payload) {
+	node_info n;
+	int i; 
+	struct peer *p;
+	
+	for (i=0; i < NumberOfNodes + NumberOfCacheNodes; i++) {
+		p = peer_get(i);
+		assert(p != NULL);
+		strncpy(n.ip, peer_address(p),17);
+		n.net_id = i;
+		n.port = peer_port(p);
+		n.node_type = peer_node_type(p);
+		evbuffer_add(payload, &n, sizeof(node_info));
+	}
+}
 
 static void handle_join_message(join_msg *jmsg) {
 	
-	int rv, written;
+	int rv, written,i, id;
 	paxos_msg pm;
-	struct evbuffer* payload = evbuffer_new();
-	jmsg->ST = validation_ST();
+	time_t tm;
+	reconf_msg rmsg;
+	node_info n;
+	struct peer *p;
 	
-	pm.data_size = sizeof(join_msg);
+	// Do we have a pending valid join? If so, ignore
+	tm = time(NULL);
+	if (node_pending && (tm - node_join_attempted) < 0) return;
+	
+	struct evbuffer* payload = evbuffer_new();
+	
+	rmsg.type = RECONFIG;
+	rmsg.ST = validation_ST();
+	rmsg.regular_nodes = NumberOfNodes ;
+	rmsg.cache_nodes = NumberOfCacheNodes;
+	
+	node_join_attempted = tm;
+	node_pending = 1;
+	
+	p = peer_get_by_info(jmsg->address, jmsg->port);
+	if (p == NULL) {
+		if(jmsg->node_type == REGULAR_NODE) {
+			rmsg.regular_nodes++;
+		} 
+		else {
+			rmsg.cache_nodes++;
+		}
+		evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
+		// Define the new node	
+		strncpy(n.ip, jmsg->address,17);
+		n.net_id = NumberOfNodes + NumberOfCacheNodes;
+		n.port = jmsg->port;
+		n.node_type = jmsg->node_type;
+		evbuffer_add(payload, &n, sizeof(node_info));
+	} else {
+		
+		evbuffer_add(payload,&rmsg, sizeof(reconf_msg));
+	}
+	
+	add_existing_nodes(jmsg, payload);
+	
 	pm.type = submit;
-	evbuffer_add(payload,jmsg, sizeof(join_msg));
+	pm.data_size = evbuffer_get_length(payload);
+	assert(pm.data_size == sizeof(reconf_msg)  
+			+ (rmsg.cache_nodes+rmsg.regular_nodes)*sizeof(node_info));
+	
 	bufferevent_write(acc_bev, &pm, sizeof(paxos_msg));
 	bufferevent_write_buffer(acc_bev, payload);
 	evbuffer_free(payload);
 }
 
+static void handle_reconfig(reconf_msg *rmsg) {
+	int i;
+	node_info *n;
+	n = (node_info *) rmsg->data;
+	
+	for (i = 0; i < rmsg->regular_nodes + rmsg->cache_nodes; i++) {
+		struct peer *p = peer_get(n->net_id);
+		if (p == NULL) {
+				peer_add(n->net_id,n->ip, n->port);
+		}
+		n++;
+	} 	
+	assert( (rmsg->regular_nodes + rmsg->cache_nodes) - 
+			(NumberOfNodes +  NumberOfCacheNodes) == 1 ||
+			(rmsg->regular_nodes + rmsg->cache_nodes) - 
+			(NumberOfNodes +  NumberOfCacheNodes) == 0
+		  ); 
+	NumberOfNodes = rmsg->regular_nodes;
+	NumberOfCacheNodes = rmsg->cache_nodes;
+	node_pending = 0;
+	
+}
 
 struct request {
 	short type;
@@ -292,6 +380,22 @@ proposer_connect(struct event_base* b, struct sockaddr_in* a) {
 	return bev;
 }
 
+static void on_deliver(char* value, size_t size, iid_t iid,
+		ballot_t ballot, int prop_id, void *arg) {
+	struct header* h = (struct header*)value;
+	switch (h->type) {
+		case TRANSACTION_SUBMIT:
+			// What a tragic waste that every tx is going to be delivered here...
+			//handle_transaction(value, size);
+			break;
+		case RECONFIG:
+			handle_reconfig((reconf_msg *) value);
+			break;
+		default:
+			printf("handle_request: dropping message of unkown type\n");
+	}
+}
+
 static void init(const char* tapioca_config, const char* paxos_config) {
 	int cm_fd, result;
 	pthread_t val_thread;
@@ -306,13 +410,16 @@ static void init(const char* tapioca_config, const char* paxos_config) {
 	base = event_base_new();
 
 	/* Set up connection to proposer */
-	//acc_bev =  proposer_connect(base, &conf->proposers[0]);
 	struct sockaddr_in saddr = evpaxos_proposer_address(conf,0);
 	acc_bev =  proposer_connect(base, &saddr);
 	assert(acc_bev != NULL);
 	
 	read_buffer = malloc(MAX_COMMAND_SIZE);
 	memset(read_buffer, 0, MAX_COMMAND_SIZE);
+	
+	// The ceritifer will now need to learn configuration change requests
+	struct evlearner *l = evlearner_init(paxos_config, on_deliver, NULL, base);
+	assert(l != NULL);
 	
 	/* Setup local listener */
 	struct evconnlistener *el =  bind_new_listener(base, LeaderIP, LeaderPort, 

@@ -44,14 +44,14 @@ launch_rec_nodes () {
 		prefix="valgrind $VALGRIND_OPTIONS "
 	fi
 	echo "Launching rec nodes"
-	#for i in 2 1 0; do
-		cmd="$prefix bin/rec 0 config/paxos_config.cfg config/1.cfg "
+	for i in 2 1 0; do
+		cmd="$prefix bin/rec $i config/paxos_config.cfg "
 		if [ "$2" = "log" ]; then
-			$cmd > /tmp/rec_1.log 2> /tmp/rec_1.log &
+			$cmd > /tmp/rec_$i.log 2> /tmp/rec_$i.log &
 		else
 			$cmd &
 		fi
-	#done
+	done
 }
 
 launch_cm() {
@@ -72,7 +72,8 @@ launch_nodes() {
 	if [ "$1" = "valgrind" ]; then
 		prefix="valgrind $VALGRIND_OPTIONS "
 	fi
-	cmd="$prefix bin/tapioca 0 config/1.cfg config/paxos_config.cfg 5555 "
+	cmd="$prefix bin/tapioca --ip-address 127.0.0.1 --port 5555 --paxos-config "
+	cmd="$cmd config/paxos_config.cfg  --storage-config config/1.cfg --node-type 0"; 
 	if [ "$2" = "log" ]; then
 		$cmd > /tmp/tapioca0.log 2> /tmp/tapioca0.log &
 	else

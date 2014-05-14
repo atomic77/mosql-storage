@@ -46,9 +46,6 @@ bptree_key_val *
 
 //int verify_bptree_order_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
 //		bptree_node *n, char *largest);
-int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
-		void *data);
-
 int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node);
 int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 		bptree_key_val *prune_kv, uuid_t failed_node, int *nodes);
@@ -271,7 +268,8 @@ int verify_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 		rv = bptree_index_next(bps, kcur, &ksize_c, vcur, &vsize_c);
 		if (rv != BPTREE_OP_KEY_FOUND) break;
 		elements++;
-		if (bptree_compar(bps,kprev, kcur, vprev, vcur, vsize_p, vsize_c) > 0)
+		if (bptree_compar(bps,kprev, kcur, vprev, vcur, vsize_p, vsize_c, 
+			bps->num_fields) > 0)
 		{
 			bptree_key_value_to_string(bps,kprev,vprev,ksize_p,vsize_p,s1);
 			bptree_key_value_to_string(bps,kcur,vcur,ksize_c,vsize_c,s2);
@@ -379,7 +377,6 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 				*rv = rv2;
 				return NULL;
 			}
-			assert_parent_child(bps, n, child );
 			if (dump_to_text && c < n->key_count)
 			{
 				int i;

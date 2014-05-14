@@ -26,16 +26,134 @@
  */
 #include "gtest.h"
 extern "C" {
-	#include "bplustree.h"
+#include "bplustree.h"
+	#include <assert.h>
 }
 
 class BptreeBasicTest : public testing::Test {
 
 protected:
-    //tapioca_handle* th;
+	
+	bptree_session *bps;
+	
+	bptree_node * make_random_multi_bptree_node(bptree_session *bps, 
+		int num_first, int num_second)
+	{
+		if (num_first * num_second >= BPTREE_NODE_SIZE) return NULL;
+		bptree_node *n = create_new_bptree_node(bps);
+
+		//printf("Inserted: ");
+		// TODO fill in some data
+		int cnt =0;
+		for (int i = 0; i < num_first; i++) 
+		{
+			for (int j =0; j < num_second; j++) 
+			{
+				int k = i * 10;
+				int l = j * 10;
+				unsigned char _k[50];
+				memcpy(_k, &k, sizeof(k));
+				memcpy(_k+sizeof(k), &l, sizeof(l));
+				char v[5] = "cccc";
+				bptree_key_val kv;
+				kv.k = _k;
+				kv.v = v;
+				kv.ksize = 2*sizeof(int);
+				kv.vsize = 4;
+				//printf(" (%d,%d) -> %s, ",k,l,v);
+				copy_key_val_to_node(n,&kv,cnt);
+				cnt++;
+			}
+			
+		}
+		//printf("\n");
+		assert(is_cell_ordered(bps, n));
+		
+		return n;
+		
+	}
+	
+	bptree_node * make_random_bptree_node(bptree_session *bps, int num_elem) {
+		if (num_elem >= BPTREE_NODE_SIZE) return NULL;
+		bptree_node *n = create_new_bptree_node(bps);
+
+			// TODO fill in some data
+
+		for (int i = 0; i < num_elem; i++) 
+		{
+			int k = i * 10;
+			char v[5] = "cccc";
+			bptree_key_val kv;
+			kv.k = (unsigned char *)&k;
+			kv.v = v;
+			kv.ksize = sizeof(int);
+			kv.vsize = 4;
+			copy_key_val_to_node(n,&kv,i);
+			
+		}
+		assert(is_cell_ordered(bps, n));
+		
+		return n;
+		
+	}
+	
+	bptree_session * mock_bptree_session_create() {
+		
+		bptree_session *bps = (bptree_session *) malloc(sizeof(bptree_session));
+		memset(bps, 0, sizeof(bps));
+		
+		bps->bpt_id = 1000;
+		bps->tapioca_client_id = 1;
+		bps->insert_flags = BPTREE_INSERT_UNIQUE_KEY;
+		bps->t = transaction_new();
+		return bps;
+	}
+	
+	/*@ Assumes that the k-vs in kv[] have been 'inserted' into node already
+	 and were assigned with *v as the value*/
+	void verify_kv_in_node(bptree_node *x, bptree_key_val *kv, int keys)
+	{
+		int rv,pos;
+		int positions[20]; 
+		// Check exact matches
+		for (int i=0; i < keys; i++) {
+			positions[i] = find_position_in_node(bps, x, &kv[i], &rv);
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+		
+		/**************************************************
+		* Change value so exact k-v checks should return a position before 
+		*/
+		// If this is a partial key match, then adjusting the value won't make
+		// any difference
+		//int shift = 1;
+		//if (kv->ksize < x->key_sizes[0]) shift = 0;
+		
+		sprintf(kv->v,"asdf");
+		
+		// If we don't set this 'tree' as allowing dupes the value will not be
+		// checked
+		bps->insert_flags = BPTREE_INSERT_ALLOW_DUPES;
+		for (int i=0; i < keys; i++) {
+			pos = find_position_in_node(bps, x, &kv[i], &rv);
+			EXPECT_EQ(rv, BPTREE_OP_KEY_NOT_FOUND);
+			EXPECT_EQ(pos, positions[i]);
+		}
+		
+		/*********************************************/
+		// Confirm that key-only checks still work
+		bps->insert_flags = BPTREE_INSERT_UNIQUE_KEY;
+		for (int i=0; i < keys; i++) {
+			pos = find_position_in_node(bps, x, &kv[i], &rv);
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+			EXPECT_EQ(pos, positions[i]);
+		}
+		
+	}
     
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
+		bps = mock_bptree_session_create();
 	}
 	
 	virtual void TearDown() {
@@ -105,3 +223,164 @@ TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
 	EXPECT_TRUE(c == 0);
 
 }
+
+TEST_F(BptreeBasicTest, BasicFindKeyInNode) {
+	int rv, num_elem = 7;
+	
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
+		BPTREE_INSERT_UNIQUE_KEY);
+	bptree_set_num_fields(bps, 1);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	bptree_key_val kv[3];
+	int keys[3];
+	keys[0] = 0;
+	keys[1] = 10 * (num_elem / 2);
+	keys[2] = 10 * (num_elem - 1);
+	
+	char v[5] = "cccc"; 
+	for (int i=0; i < 3; i++) {
+		kv[i].k = (unsigned char *)&keys[i];
+		kv[i].v = (unsigned char *)v;
+		kv[i].ksize = sizeof(int);
+		kv[i].vsize = sizeof(int);
+	}
+
+	verify_kv_in_node(n, kv, 3);
+}
+
+
+TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
+	int rv, num_elem = 7;
+	
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY);
+	bptree_set_num_fields(bps, 2);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	int f = 5, s = 2;
+	ASSERT_GE(BPTREE_NODE_SIZE, f * s);
+	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_key_val kv[10];
+	char v[5] = "cccc"; 
+	int c =0;
+	//printf("Checking: ");
+	for (int i=0; i < f; i++) {
+		for(int j=0; j < s; j++) {
+			int k = i * 10;
+			int l = j * 10;
+			unsigned char *_k = (unsigned char *) malloc(50); // leak, my pretty!
+			memcpy(_k, &k, sizeof(int));
+			memcpy(_k+sizeof(int), &l, sizeof(int));
+			//printf(" (%d,%d) -> %s, ",k,l,v);
+			kv[c].k = _k;
+			kv[c].v = (unsigned char *)v;
+			kv[c].ksize = sizeof(int)*2;
+			kv[c].vsize = sizeof(int);
+			c++;
+		}
+	}
+	//printf("\n");
+	verify_kv_in_node(n, kv, f*s);
+}
+
+
+TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
+	int rv, num_elem = 7;
+	
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
+		BPTREE_INSERT_UNIQUE_KEY);
+	bptree_set_num_fields(bps, 2);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	int f = 5, s = 2;
+	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_key_val kv[5];
+	char v[5] = "cccc"; 
+	int c =0;
+	// A set of partial keys to search against
+	for (int i=0; i < f; i++) {
+		int k = i * 10;
+		unsigned char *_k = (unsigned char *) malloc(50); // leak, my pretty!
+		memcpy(_k, &k, sizeof(int));
+		//printf(" (%d,NULL) -> %s, ",k,v);
+		kv[c].k = _k;
+		kv[c].v = (unsigned char *)v;
+		kv[c].ksize = sizeof(int);
+		kv[c].vsize = sizeof(int);
+		c++;
+	}
+	//printf("\n");
+	verify_kv_in_node(n, kv, f);
+}
+
+
+TEST_F(BptreeBasicTest, BasicFindMissingElement) {
+	int rv, pos, num_elem = 7;
+	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY );
+	bptree_set_num_fields(bps, 1);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	bptree_node *n = create_new_empty_bptree_node();
+	bptree_key_val kv;
+	int k, v;
+	kv.k = (unsigned char *)&k;
+	kv.ksize = sizeof(int);
+	kv.v = (unsigned char *)&v;
+	kv.vsize = sizeof(int);
+	k = 1;
+	v = 1000;
+	copy_key_val_to_node(n, &kv, 0);
+	EXPECT_EQ(k, *(int *)n->keys[0]);
+	k = 5; 
+	copy_key_val_to_node(n, &kv, 1);
+	EXPECT_EQ(k, *(int *)n->keys[1]);
+	k = 10; 
+	copy_key_val_to_node(n, &kv, 2);
+	EXPECT_EQ(k, *(int *)n->keys[2]);
+	k = 15; 
+	copy_key_val_to_node(n, &kv, 3);
+	EXPECT_EQ(k, *(int *)n->keys[3]);
+	
+	rv = is_cell_ordered(bps, n);
+	EXPECT_TRUE(rv != 0);
+	
+	k = 7; 
+	pos = find_position_in_node(bps, n, &kv, &rv);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(2, pos);
+	
+	k = -1;
+	pos = find_position_in_node(bps, n, &kv, &rv);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(0, pos);
+	
+	k = 16; 
+	pos = find_position_in_node(bps, n, &kv, &rv);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(4, pos);
+	
+}
+// TODO Write basic unit tests for:
+// find position of elements that don't exist
+// shift_bptree_node_elements
+// shift_bptree_node_children
+// move_bptree_node_element
+// copy_key_val_to_node
+// compar functions
+
+
+
