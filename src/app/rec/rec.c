@@ -70,7 +70,7 @@ static iid_t Iid = 0;
 static int rec_key_count = 0;
 static int rec_fsync_interval = 5000;
 
-static void on_deliver(void* value, size_t size, iid_t iid,
+static void on_deliver(char* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) ;
 void update_rec_index(iid_t iid, tr_deliver_msg* dmsg);
 
@@ -199,7 +199,7 @@ static void handle_transaction(void* value, size_t size, iid_t iid) {
 
 
 
-static void on_deliver(void* value, size_t size, iid_t iid,
+static void on_deliver(char* value, size_t size, iid_t iid,
 		ballot_t ballot, int prop_id, void *arg) {
 	Iid++; // Update global instance id
 	
@@ -320,7 +320,7 @@ static void init(int acceptor_id, const char* paxos_conf) {
 	base = event_base_new();
 	
 	// Start learner
-	struct learner *l = evlearner_init(paxos_conf, on_deliver, NULL, base);
+	struct evlearner *l = evlearner_init(paxos_conf, on_deliver, NULL, base);
 	assert(l != NULL);
 	
 	// Create new listener for recovery requests

@@ -57,7 +57,7 @@ protected:
 				char v[5] = "cccc";
 				bptree_key_val kv;
 				kv.k = _k;
-				kv.v = v;
+				kv.v = (unsigned char *)v;
 				kv.ksize = 2*sizeof(int);
 				kv.vsize = 4;
 				//printf(" (%d,%d) -> %s, ",k,l,v);
@@ -85,7 +85,7 @@ protected:
 			char v[5] = "cccc";
 			bptree_key_val kv;
 			kv.k = (unsigned char *)&k;
-			kv.v = v;
+			kv.v = (unsigned char *)v;
 			kv.ksize = sizeof(int);
 			kv.vsize = 4;
 			copy_key_val_to_node(n,&kv,i);
@@ -129,7 +129,7 @@ protected:
 		//int shift = 1;
 		//if (kv->ksize < x->key_sizes[0]) shift = 0;
 		
-		sprintf(kv->v,"asdf");
+		sprintf((char *) kv->v,"asdf");
 		
 		// If we don't set this 'tree' as allowing dupes the value will not be
 		// checked
@@ -177,21 +177,21 @@ TEST_F(BptreeBasicTest, BasicNodeSerDe) {
 	n->key_sizes[1] = 7;
 	n->keys[0] = (unsigned char *) malloc(5);
 	n->keys[1] = (unsigned char *) malloc(7);
-	strncpy(n->keys[0], "aaaa",4);
-	strncpy(n->keys[1], "aaaaaa", 6);
+	strncpy((char *)n->keys[0], "aaaa",4);
+	strncpy((char *)n->keys[1], "aaaaaa", 6);
 	
 	n->value_sizes[0] = 3;
 	n->value_sizes[1] = 9;
 	n->values[0] = (unsigned char *) malloc(3);
 	n->values[1] = (unsigned char *) malloc(9);
-	strncpy(n->values[0] , "ccc", 3);
-	strncpy(n->values[1] , "dddddddd", 10);
+	strncpy((char *)n->values[0] , "ccc", 3);
+	strncpy((char *)n->values[1] , "dddddddd", 10);
 	buf = marshall_bptree_node(n, &bsize1);
-	EXPECT_NE(buf, NULL);
+	EXPECT_FALSE(buf == NULL);
 	n2 = unmarshall_bptree_node(buf, bsize1, &bsize3);
-	EXPECT_NE(n2, NULL);
+	EXPECT_FALSE(n2 == NULL);
 	buf2 = marshall_bptree_node(n2, &bsize2);
-	EXPECT_NE(buf2, NULL);
+	EXPECT_FALSE(buf2 == NULL);
 	c = memcmp(buf, buf2, bsize1);
 	// The buffers buf and buf2 should now be identical
 	EXPECT_TRUE (bsize1 > 0);
@@ -211,11 +211,11 @@ TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
 	m.bpt_id = 123;
 	
 	buf = marshall_bptree_meta_node(&m, &bsize1);
-	EXPECT_NE(buf, NULL);
+	EXPECT_FALSE(buf == NULL);
 	m2 = unmarshall_bptree_meta_node(buf, bsize1);
-	EXPECT_NE(m2, NULL);
+	EXPECT_FALSE(m2 == NULL);
 	buf2 = marshall_bptree_meta_node(m2, &bsize2);
-	EXPECT_NE(m2, NULL);
+	EXPECT_FALSE(m2 == NULL);
 	c = memcmp(buf, buf2, bsize1);
 	// The buffers buf and buf2 should now be identical
 	EXPECT_TRUE (bsize1 > 0);

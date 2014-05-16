@@ -72,7 +72,7 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x,
 		bptree_node *n,int i);
 bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
-inline int num_fields_used(bptree_session *bps, bptree_key_val *kv) ;
+inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) ;
 //bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
 //		size_t *nsize);
 
@@ -457,7 +457,7 @@ inline int bptree_compar_to_node(bptree_session *bps,
 }
 
 /*@ Calculate the number of fields actually used in the referenced kv */
-inline int num_fields_used(bptree_session *bps, bptree_key_val *kv) {
+inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) {
 	int i, acc, fields = 0;
 	acc = 0;
 	bptree_field *bf = bps->bfield;
@@ -2216,7 +2216,7 @@ void print_trace (void)
 
   free (strings);
   printf("Trying to write with backtrace_symbols_fd to stdout:\n");
-  backtrace_symbols_fd(array, size, stdout);
+  backtrace_symbols_fd(array, size, STDOUT_FILENO);
 }
 
 /*@ Wrapper for uuid_generate */

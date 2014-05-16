@@ -95,7 +95,7 @@ rlog * rlog_init(const char *path) {
 	rv = r->dbenv->set_cachesize(r->dbenv, MEM_CACHE_SIZE, 1);
 	if (rv != 0) {
 		printf("DB_ENV set_cachesize failed: %s\n", db_strerror(rv));
-		return -1;
+		return NULL;
 	}
 	
     sprintf(log_path, "%s/", path);

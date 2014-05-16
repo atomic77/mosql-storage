@@ -49,14 +49,15 @@ static iid_t find_min_rec_iid(int acceptor_id) {
 	iid_t iid, min_iid;
 	int rv;
 	char rec_db_path[128];
-	char key[4096];
+	//char key[4096];
 	
 	min_iid = INT_MAX;
 	sprintf(rec_db_path, "%s/rlog_%d", "/tmp", acceptor_id);
 	rlog *rl = rlog_init(rec_db_path);
+	key k;
 	
 	rlog_tx_begin(rl);
-	while ( (rv = rlog_next(rl, &iid, key)) == 1 ) 
+	while ( (rv = rlog_next(rl, &iid, &k)) == 1 ) 
 	{
 		if (iid < min_iid) min_iid = iid;
 		
