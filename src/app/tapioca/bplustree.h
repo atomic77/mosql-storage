@@ -96,7 +96,8 @@ static bptree_comparator comparators[] =  {
 	int64cmp,
 	strncmp_wrap,
 	memcmp,
-	strncmp_mysql
+	strncmp_mysql,
+	strncmp_mysql_var
 };
 
 #define BPTREE_TPL_META_NODE_FMT "ic#j"

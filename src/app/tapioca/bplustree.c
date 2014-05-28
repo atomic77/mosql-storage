@@ -271,6 +271,8 @@ int bptree_search(bptree_session *bps, void *k,
 	kv.v = v;
 	kv.ksize = ksize;
 
+	if (ksize <= 0 || ksize >= 65000) return BPTREE_OP_INVALID_INPUT;
+	
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
@@ -377,6 +379,8 @@ int bptree_update(bptree_session *bps, void *k,
 	kv.ksize = ksize;
 	kv.vsize = vsize;
 
+	if (ksize <= 0 || ksize >= 65000
+		|| vsize <= 0 || vsize >= 65000) return BPTREE_OP_INVALID_INPUT;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
@@ -568,6 +572,9 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	unsigned char _val[65000];
 	int _vsize;
 
+	if (ksize <= 0 || ksize >= 65000
+		|| vsize <= 0 || vsize >= 65000) return BPTREE_OP_INVALID_INPUT;
+	
 	rv = bptree_search(bps, k, ksize, _val, &_vsize);
 
 	kv.k = k;
@@ -2231,7 +2238,7 @@ static void get_unique_key(bptree_session *bps, uuid_t uu)
 // implement these various comparison functions
 //inline
 
-inline int int8cmp(const void *i1, const void *i2, size_t v_ignored)
+int int8cmp(const void *i1, const void *i2, size_t v_ignored)
 {
 	int8_t *a = (int8_t*) i1;
 	int8_t *b = (int8_t*) i2;
@@ -2277,7 +2284,16 @@ inline int strncmp_mysql(const void *i1, const void *i2, size_t sz)
 	return strncmp(a,b,len);
 }
 
-inline int strncmp_wrap(const void *i1, const void *i2, size_t sz)
+// VARCHARs in MySQL always use 2-byte lengths
+int strncmp_mysql_var(const void *i1, const void *i2, size_t sz)
+{
+	size_t len = sz - 2;
+	const char *a = (const char*) i1 + 2;
+	const char *b = (const char*) i2 + 2;
+	return strncmp(a,b,len);
+}
+
+int strncmp_wrap(const void *i1, const void *i2, size_t sz)
 {
 	return strncmp((char *)i1,(char *)i2,sz);
 }

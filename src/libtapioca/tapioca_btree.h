@@ -66,7 +66,8 @@ enum bptree_field_comparator {
 	BPTREE_FIELD_COMP_INT_64=3,
 	BPTREE_FIELD_COMP_STRNCMP=4,
 	BPTREE_FIELD_COMP_MEMCMP=5,
-	BPTREE_FIELD_COMP_MYSQL_STRNCMP=6
+	BPTREE_FIELD_COMP_MYSQL_STRNCMP=6,
+	BPTREE_FIELD_COMP_MYSQL_VAR_STRNCMP=7
 };
 
 
@@ -112,13 +113,13 @@ void bptree_mget_result_free(bptree_mget_result **bmres);
 // TODO This is quick and convenient now, but we need to find a better way to
 // implement these various comparison functions
 
-// inline
 int int8cmp (const void *i1, const void *i2, size_t v_ignored);
 int int16cmp (const void *i1, const void *i2, size_t v_ignored);
 int int32cmp (const void *i1, const void *i2, size_t v_ignored);
 int int64cmp (const void *i1, const void *i2, size_t v_ignored);
 int strncmp_mysql(const void *i1, const void *i2, size_t sz);
 int strncmp_wrap(const void *i1, const void *i2, size_t sz);
+int strncmp_mysql_var(const void *i1, const void *i2, size_t sz);
 
 
 
