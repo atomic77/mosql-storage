@@ -68,7 +68,7 @@ rlog * rlog_init(const char *path) {
 			* also turns on logging. */
       DB_INIT_MPOOL |  /* Initialize the memory pool (in-memory cache) */
       DB_REGISTER	|
-      DB_THREAD; //	|  /* Cause the environment to be free-threaded */
+      DB_THREAD ;		  /* Cause the environment to be free-threaded */
       //DB_TXN_WRITE_NOSYNC ;
 
     open_flags =
@@ -97,6 +97,12 @@ rlog * rlog_init(const char *path) {
 		printf("DB_ENV set_cachesize failed: %s\n", db_strerror(rv));
 		return NULL;
 	}
+	rv = r->dbenv->set_flags(r->dbenv, DB_TXN_WRITE_NOSYNC , 1);
+	if (rv != 0) {
+		printf("DB_ENV set txn no fsync failed: %s\n", db_strerror(rv));
+		return NULL;
+	}
+
 	
     sprintf(log_path, "%s/", path);
     sprintf(db_path, "%s/rec.db", path);

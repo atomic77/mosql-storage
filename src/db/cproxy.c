@@ -245,10 +245,11 @@ static void handle_node_config(reconf_msg *rmsg) {
 		}
 		n++;
 	}
-	assert((rmsg->regular_nodes +rmsg->cache_nodes)- 
+	/*assert((rmsg->regular_nodes +rmsg->cache_nodes)- 
 			(NumberOfNodes + NumberOfCacheNodes) == 1 ||
 			(rmsg->regular_nodes +rmsg->cache_nodes)- 
 			(NumberOfNodes + NumberOfCacheNodes) == 0);
+*/
 	NumberOfNodes = rmsg->regular_nodes;
 	NumberOfCacheNodes = rmsg->cache_nodes;
 }
@@ -264,7 +265,7 @@ static void on_deliver(char* value, size_t size, iid_t iid,
 	struct header* h = (struct header*)value;
 	switch (h->type) {
 		case TRANSACTION_SUBMIT:
-			handle_transaction(value, size);
+			if(NodeID != -1) handle_transaction(value, size);
 			break;
 		case NODE_JOIN:
 			//handle_join_message((join_msg *)value);

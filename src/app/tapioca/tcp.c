@@ -65,7 +65,7 @@ typedef struct listener_t {
 static int is_socket_init = 0;
 
 static listener ls;
-static struct timeval commit_timeout = {10, 500000};
+static struct timeval commit_timeout = {300, 500000};
 
 
 static int init_listener(listener* l, int port);
@@ -370,8 +370,8 @@ static void on_commit_timeout(int fd, short event, void* arg) {
 	tcp_client* c = (tcp_client*)arg;
 	transaction_clear(c->t);
 	send_result(c->buffer_ev, -1);
-	printf("Commit timeout passed! aborting for safety\n");
-	assert(0);
+	printf("Commit timeout passed! Probably should abort for safety\n");
+	//assert(0);
 }
 
 

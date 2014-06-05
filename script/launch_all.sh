@@ -11,9 +11,10 @@ DELAY=1
 VALGRIND="n"
 TMPFOLDER=/tmp
 LOG="n"
+IP_ADDRESS="127.0.0.1"
 
-SHORTOPTS="hckrp:d:ovl"
-LONGOPTS="help,clear-db,kill-all,no-rec,paxos-dir:delay:,no-proposer,valgrind,log"
+SHORTOPTS="hckrp:d:ovli:"
+LONGOPTS="help,clear-db,kill-all,no-rec,paxos-dir:delay:,no-proposer,valgrind,log,ip-address:"
 
 usage() {
 	echo "$0 <Options>"
@@ -38,6 +39,9 @@ usage() {
 	echo
 	echo "-l, --log"
 	echo "	Send process output to /tmp/<proc>.log"
+	echo
+	echo "-i, --ip-address"
+	echo "	Bind to ip-address"
 	exit 1
 }
 
@@ -92,6 +96,10 @@ while true; do
 		;;
       -l|--log) 
 		LOG="y"
+		;;
+      -i|--ip-address) 
+		shift
+		IP_ADDRESS=$1
 		;;
       *)
          break
