@@ -806,7 +806,7 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 		prev = cmp;
 	}
 	i++;
-	*rv = (prev == 0) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
+	*rv = (prev == 0 && x->active[i]) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
 	// FIXME Optmize this extra call to num_fields() out
 	if(*rv == BPTREE_OP_KEY_FOUND && !x->leaf 
 		&& bps->num_fields == num_fields_used(bps, kv))
@@ -1474,6 +1474,7 @@ int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 int is_node_sane(bptree_node *n)
 {
 	int i =0;
+	// TODO Embed all the asserts inside this function
 	// Do some sanity checking of the node; these two checks should
 	// probably be enough to catch most cases of corrupt or uninitialized nodes
 	if (n == NULL) return 0;
