@@ -1180,6 +1180,7 @@ static int bptree_index_first_recursive(bptree_session *bps, void *k,
 		memcpy(v, n->values[0], n->value_sizes[0]);
 		bps->cursor_pos = 1;
 		bps->cursor_node = copy_node(n);
+		if(!n->active[0]) return BPTREE_OP_KEY_DELETED;
 		return BPTREE_OP_KEY_FOUND;
 	}
 	else
