@@ -975,6 +975,8 @@ int bptree_index_next(bptree_session *bps, void *k,
 	{
 		bps->eof = 0;
 		bps->cursor_pos = 0;
+		*ksize = 0;
+		*vsize = 0;
 		//TODO This should probably be an error condition
 		return BPTREE_OP_EOF;
 	}
