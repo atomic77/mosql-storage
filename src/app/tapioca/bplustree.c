@@ -73,16 +73,13 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x,
 bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
 inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) ;
-//bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
-//		size_t *nsize);
 
-
-// FIXME There is no longer any good reason to have commit done inside of
-// these methods; the client is unlikely to want to have a committed  bpt 
-// if the other metadata it writes has to be retried. i.e. merge these next 
-// two methods together or rename this one
-// A special open-only form of the init bpt session that does not call commit
-// REQUIRES an externally-maintained UNIQUE execution_id to be provided!!
+/* There is no longer any good reason to have commit done inside of
+* these methods; the client is unlikely to want to have a committed  bpt 
+* if the other metadata it writes has to be retried. i.e. merge these next 
+* two methods together or rename this one
+* A special open-only form of the init bpt session that does not call commit
+* REQUIRES an externally-maintained UNIQUE execution_id to be provided!! */
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
 		enum bptree_insert_flags insert_flags,
@@ -341,25 +338,83 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 	}
 	else
 	{
-		bptree_node *n;
+		bptree_node *c;
 
-		n = read_node(bps, x->children[i], &rv);
+		if (rv == BPTREE_OP_KEY_FOUND)
+		{
+			x->active[i] = 0; 
+		}
+		c = read_node(bps, x->children[i], &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-		// This should probably be an assertion..
-// 		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 ) 
-// 		{
-// 			// TODO Do we need to de-activate inner nodes?
-// 			x->active[i] = 0; 
-// 			 
-// 			
-// 		}
-// 
-		rv = bptree_delete_recursive(bps, n, kv);
-		free_node(&n);
+		
+		rv = bptree_delete_recursive(bps, c, kv);
+		
+		// Check if we have an underflow condition
+		if (c->key_count < BPTREE_MIN_DEGREE)
+		{
+			rebalance_nodes(bps, x, c, i);
+			
+		}
+		
+		free_node(&c);
 		return rv;
 	}
 }
 
+/*@
+ * Given parent node *p and child *c in position i that has now underflowed, 
+ * merge *c with an adjacent node
+ */
+int rebalance_nodes(bptree_session *bps, bptree_node *p, 
+			       bptree_node *c, int i)
+{
+	int i_adj, rv;
+	bptree_node *adj;
+	assert(c->key_count < BPTREE_MIN_DEGREE);
+	// Choose an adjacent node to redistribute with
+	i_adj = i+1;
+	if (i >= p->key_count -1) {
+		i_adj = i-1;
+	}
+	adj = read_node(bps, p->children[i_adj], &rv);
+	if (rv != BPTREE_OP_NODE_FOUND) return rv;
+	assert(adj->key_count >= BPTREE_MIN_DEGREE);
+	
+	if (c->key_count + adj->key_count <= 2 * BPTREE_MIN_DEGREE)
+	{
+		// Concatenate (i.e. remove one) nodes
+		concatenate_nodes(bps, p, c, adj, i);
+	} 
+	else 
+	{
+		// Redistribute keys among nodes
+		redistribute_keys(bps, p, c, adj, i);
+	}
+}
+
+/*@ Evenly redistribute the keys in c1 and c2 to reduce the chances of underflow
+ * in future deletes. 
+ * See "Organization and maintenance of large ordered indices", Bayer, R., '72 */
+int redistribute_keys(bptree_session *bps, bptree_node *p, bptree_node *c1,
+		      bptree_node *c2, int i)
+{
+	// Don't remove any nodes, but rearrange keys in nodes from left and 
+	// right to eliminate the underflow
+	
+}
+
+/*@ Merge keys from two child nodes into one */
+int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *c1,
+		      bptree_node *c2, int i)
+{
+	// Basic idea: Move splitting key from parent to end of left-side node
+	// and move elements from right side after. 
+	
+	// Move the split key up; if y is a leaf, copy, if not, move it
+	// Special case: where the right hand node is the smaller one
+	//move_bptree_node_element(p, c, BPTREE_MIN_DEGREE, i, true);
+	
+}
 
 /*@
  * Update functions are basically simplified versions of ones for insert();
