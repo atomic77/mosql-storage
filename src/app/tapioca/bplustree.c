@@ -369,50 +369,107 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 			       bptree_node *c, int i)
 {
 	int i_adj, rv;
-	bptree_node *adj;
+	bptree_node *adj, *cl, *cr;
 	assert(c->key_count < BPTREE_MIN_DEGREE);
 	// Choose an adjacent node to redistribute with
 	i_adj = i+1;
 	if (i >= p->key_count -1) {
 		i_adj = i-1;
 	}
-	adj = read_node(bps, p->children[i_adj], &rv);
+	cl = c;
+	cr = adj = read_node(bps, p->children[i_adj], &rv);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 	assert(adj->key_count >= BPTREE_MIN_DEGREE);
 	
-	if (c->key_count + adj->key_count <= 2 * BPTREE_MIN_DEGREE)
+	if (i_adj < i)
+	{
+		cl = adj;
+		cr = c;
+	}
+	
+	if (c->key_count + adj->key_count < BPTREE_NODE_MIN_SIZE)
 	{
 		// Concatenate (i.e. remove one) nodes
-		concatenate_nodes(bps, p, c, adj, i);
+		concatenate_nodes(bps, p, cl, cr, i);
 	} 
 	else 
 	{
 		// Redistribute keys among nodes
-		redistribute_keys(bps, p, c, adj, i);
+		redistribute_keys(bps, p, cl, cr, i);
 	}
 }
 
 /*@ Evenly redistribute the keys in c1 and c2 to reduce the chances of underflow
  * in future deletes. 
  * See "Organization and maintenance of large ordered indices", Bayer, R., '72 */
-int redistribute_keys(bptree_session *bps, bptree_node *p, bptree_node *c1,
-		      bptree_node *c2, int i)
+int redistribute_keys(bptree_session *bps, bptree_node *p, bptree_node *cl,
+		      bptree_node *cr, int i)
 {
+	int j;
 	// Don't remove any nodes, but rearrange keys in nodes from left and 
 	// right to eliminate the underflow
+	if (cl->key_count < cr->key_count)
+	{
+		j = cl->key_count;
+		// Flow right to left
+		while (cr->key_count - cl->key_count > 0)
+		{
+			move_bptree_node_element(cr, cl, 0, j, true);
+			// TODO Move the node keycount maintenance logic into fn
+			cr->key_count--;
+			cl->key_count++;
+			shift_bptree_node_elements_left(cr, 1);
+			if(!cl->leaf) shift_bptree_node_children_left(cr, 1);
+			j++;
+		}
+	}
+	else
+	{
+		// Flow left to right
+		j = cl->key_count -1;
+		while (cl->key_count - cr->key_count > 0)
+		{
+			shift_bptree_node_elements_right(cr, 0);
+			if(!cr->leaf) shift_bptree_node_children_right(cr,0);
+			move_bptree_node_element(cl, cr, j, 0, true);
+			// TODO Move the node keycount maintenance logic into fn
+			cl->key_count--;
+			cr->key_count++;
+			j--;
+		}
+	}
+	// After we're done moving elements across, copy the
+	// new left-most element in *cr to the parent node
+	move_bptree_node_element(cr, p, 0, i, false);
 	
 }
 
 /*@ Merge keys from two child nodes into one */
-int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *c1,
-		      bptree_node *c2, int i)
+int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *cl,
+		      bptree_node *cr, int i)
 {
 	// Basic idea: Move splitting key from parent to end of left-side node
 	// and move elements from right side after. 
+	int r, l;
 	
-	// Move the split key up; if y is a leaf, copy, if not, move it
-	// Special case: where the right hand node is the smaller one
-	//move_bptree_node_element(p, c, BPTREE_MIN_DEGREE, i, true);
+	if(!cl->leaf)
+	{
+		// If not concat'ing a leave we need to move down the split key 
+		move_bptree_node_element(p, cl, cl->key_count, i, false);
+	}
+	
+	l = cl->key_count+1;
+	for (r = 0; i < cr->key_count; r++)
+	{
+		move_bptree_node_element(cr, cl, 0, l, true);
+		shift_bptree_node_elements_left(cr, 1);
+		if(!cl->leaf) shift_bptree_node_children_left(cr, 1);
+		l++;
+	}
+	// 'delete' the old parent key by shifting everything over
+	shift_bptree_node_elements_left(p,i);
+	shift_bptree_node_children_left(p,i);
+	
 	
 }
 
@@ -772,30 +829,59 @@ static int bptree_split_child(bptree_session *bps,
 	return BPTREE_OP_SUCCESS;
 }
 
-/*@ Shift the elements of bptree_node at position pos by one  */
-void shift_bptree_node_elements(bptree_node *x, int pos)
+/*@ Copies whatever is in x[j] n positions over; can be negative */
+void copy_node_data(bptree_node *x, int j, int n)
+{
+	// Crash rather than do something stupid. We are proud, after all.
+	assert(j+n < x->key_count);
+	assert(j+n >= 0);
+	x->keys[j+n] = malloc(x->key_sizes[j]);
+	memcpy(x->keys[j+n], x->keys[j], x->key_sizes[j]);
+	x->key_sizes[j+n] = x->key_sizes[j];
+	x->values[j+n] = malloc(x->value_sizes[j]);
+	memcpy(x->values[j+n], x->values[j], x->value_sizes[j]);
+	x->value_sizes[j+n] = x->value_sizes[j];
+	x->active[j+n] = x->active[j];
+}
+/*@ Shift the elements of bptree_node right at position pos*/
+void shift_bptree_node_elements_right(bptree_node *x, int pos)
 {
 	assert(x->key_count < BPTREE_NODE_SIZE);
 	int j;
 	if(pos > x->key_count-1) return;
 	for (j = x->key_count - 1; j >= pos; j--)
 	{
-		x->keys[j+1] = malloc(x->key_sizes[j]);
-		memcpy(x->keys[j+1], x->keys[j], x->key_sizes[j]);
-		x->key_sizes[j+1] = x->key_sizes[j];
-		x->values[j+1] = malloc(x->value_sizes[j]);
-		memcpy(x->values[j+1], x->values[j], x->value_sizes[j]);
-		x->value_sizes[j+1] = x->value_sizes[j];
-		x->active[j+1] = x->active[j];
+		copy_node_data(x, j, 1);
 	}
 }
 
-void shift_bptree_node_children(bptree_node *x, int pos)
+void shift_bptree_node_children_right(bptree_node *x, int pos)
 {
 	int j;
 	for (j = x->key_count ; j > pos; j--)
 	{
 		uuid_copy(x->children[j + 1],x->children[j]);
+	}
+}
+
+/*@ Shift the elements of bptree_node right at position pos*/
+void shift_bptree_node_elements_left(bptree_node *x, int pos)
+{
+	assert(x->key_count < BPTREE_NODE_SIZE);
+	int j;
+	if(pos > x->key_count-1) return;
+	for (j = pos; j < x->key_count; j++)
+	{
+		copy_node_data(x, j, -1);
+	}
+}
+
+void shift_bptree_node_children_left(bptree_node *x, int pos)
+{
+	int j;
+	for (j = pos; j < x->key_count; j++)
+	{
+		uuid_copy(x->children[j - 1],x->children[j]);
 	}
 }
 

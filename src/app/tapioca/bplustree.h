@@ -41,8 +41,15 @@
 
 #include <paxos.h>
 
+/* Note that these are the Cormen definitions, i.e. let t be the degree of the 
+ * btree, so 2t is the # of children, 2t -1 is the max size of the node
+ * and t -1 is the minimum size of a non-root node
+ */
 #define BPTREE_MIN_DEGREE 9 
+#define BPTREE_NODE_MIN_SIZE BPTREE_MIN_DEGREE -1
 #define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
+#define BPTREE_NODE_MAX_CHILDREN 2 * BPTREE_MIN_DEGREE 
+
 #define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
 
 #define BPTREE_META_NODE_PACKET_HEADER 0x4
