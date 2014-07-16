@@ -30,7 +30,7 @@ extern "C" {
 	#include <assert.h>
 }
 
-class BptreeBasicTest : public testing::Test {
+class BptreeCoreTest : public testing::Test {
 
 protected:
 	
@@ -161,7 +161,27 @@ protected:
 
 };
 
-TEST_F(BptreeBasicTest, BasicNodeSerDe) {
+class BptreeIntBasedTreeTest : public BptreeCoreTest {
+	
+protected:
+	int rv;
+	int k, v, ksize, vsize;
+	virtual void SetUp() {
+		//system("cd ..; ./start.sh > /dev/null; cd unit");
+		bps = mock_bptree_session_create();
+		
+		bptree_initialize_bpt_session(bps, 1000, 
+			BPTREE_OPEN_OVERWRITE, BPTREE_INSERT_UNIQUE_KEY );
+		bptree_set_num_fields(bps, 1);
+		bptree_set_field_info(bps, 0, sizeof(int32_t), 
+				      BPTREE_FIELD_COMP_INT_32, int32cmp);
+
+	}
+	
+	
+};
+
+TEST_F(BptreeCoreTest, NodeSerDe) {
 	size_t bsize1, bsize2, bsize3, bsize4;
 	int c;
 	void *buf, *buf2;
@@ -200,7 +220,7 @@ TEST_F(BptreeBasicTest, BasicNodeSerDe) {
 
 }
 
-TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
+TEST_F(BptreeCoreTest, MetaNodeSerDe) {
 	size_t bsize1, bsize2;
 	int c;
 	void *buf, *buf2;
@@ -224,7 +244,7 @@ TEST_F(BptreeBasicTest, BasicMetaNodeSerDe) {
 
 }
 
-TEST_F(BptreeBasicTest, BasicFindKeyInNode) {
+TEST_F(BptreeCoreTest, FindKeyInNode) {
 	int rv, num_elem = 7;
 	
 	ASSERT_GE(BPTREE_NODE_SIZE, 7);
@@ -253,7 +273,7 @@ TEST_F(BptreeBasicTest, BasicFindKeyInNode) {
 }
 
 
-TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
+TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 	int rv, num_elem = 7;
 	
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
@@ -291,7 +311,7 @@ TEST_F(BptreeBasicTest, BasicFindMultiLevelKeyInNode) {
 }
 
 
-TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
+TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 	int rv, num_elem = 7;
 	
 	ASSERT_GE(BPTREE_NODE_SIZE, 7);
@@ -325,7 +345,7 @@ TEST_F(BptreeBasicTest, BasicFindPartialKeyInNode) {
 }
 
 
-TEST_F(BptreeBasicTest, BasicFindMissingElement) {
+TEST_F(BptreeCoreTest, FindMissingElement) {
 	int rv, pos, num_elem = 7;
 	ASSERT_GE(BPTREE_NODE_SIZE, 7);
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
@@ -374,6 +394,87 @@ TEST_F(BptreeBasicTest, BasicFindMissingElement) {
 	EXPECT_EQ(4, pos);
 	
 }
+/*
+TEST_F(BptreeCoreTest, BasicDeleteElement) {
+	int rv, pos, num_elem = 7;
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY );
+	bptree_set_num_fields(bps, 1);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	
+	// Out of bounds
+	delete_key_from_node(n, num_elem);
+	// Border case
+	delete_key_from_node(n, num_elem);
+	// Middle
+	delete_key_from_node(n, num_elem);
+	// First
+	delete_key_from_node(n, num_elem);
+	// Assert some stuff abuot the size of the node
+	
+}
+*/
+
+TEST_F(BptreeCoreTest, ReadNodeMock) {
+	int rv;
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY );
+	bptree_set_num_fields(bps, 1);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	bptree_node *n = make_random_bptree_node(bps, 5);
+	rv = write_node(bps,n);  
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	bptree_node *n2 = read_node(bps, n->self_key, &rv); 
+	EXPECT_EQ(rv, BPTREE_OP_NODE_FOUND);
+	EXPECT_TRUE(uuid_compare(n->self_key, n2->self_key) == 0);
+	EXPECT_EQ(n->key_count, n2->key_count);
+	
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
+	// Inserting more than nodesize ensures that at least one split happens
+	int n = 5 * BPTREE_NODE_SIZE;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		v = i*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		EXPECT_EQ(vsize, sizeof(v));
+		EXPECT_EQ(v, i*10000);
+	}
+	
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
+	k = 1000;
+	v = 1234;
+	rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+	EXPECT_EQ(rv, BPTREE_ERR_DUPLICATE_KEY_INSERTED);
+	v = 0;
+	rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	EXPECT_EQ(v, 1234);
+	EXPECT_EQ(vsize, sizeof(v));
+	
+	
+}
+
 // TODO Write basic unit tests for:
 // find position of elements that don't exist
 // shift_bptree_node_elements

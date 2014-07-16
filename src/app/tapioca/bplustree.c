@@ -327,13 +327,12 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 	
 	if (x->leaf)
 	{
-		if (rv == BPTREE_OP_KEY_NOT_FOUND)
+		if (rv == BPTREE_OP_KEY_FOUND)
 		{
-			// Key was not found where it should have been; do nothing
-			return rv;
+			return write_node(bps, x);
 		}
-		x->active[i] = 0;
-		return write_node(bps, x);
+		return rv;
+		
 
 	}
 	else
@@ -757,8 +756,8 @@ static int bptree_split_child(bptree_session *bps,
 	write_split_to_trace(bps, x, y, NULL, i, lvl);
 #endif
 
-	shift_bptree_node_children(x, i);
-	shift_bptree_node_elements(x, i);
+	shift_bptree_node_children_right(x, i);
+	shift_bptree_node_elements_right(x, i);
 	x->key_count++;
 	// Move the split key up; if y is a leaf, copy, if not, move it
 	move_bptree_node_element(y, x, BPTREE_MIN_DEGREE - 1, i, !y->leaf);
@@ -885,6 +884,19 @@ void shift_bptree_node_children_left(bptree_node *x, int pos)
 	}
 }
 
+void delete_key_from_node(bptree_node *x, int pos)
+{
+	if (pos >= x->key_count || pos < 0) return;
+	
+	//stub: Remove the key and unmalloc everything
+	if (pos < x->key_count -1) 
+	{
+		// stub: If we're not on the edge, shift everything over
+		
+	}
+	
+	
+}
 /*@ Move btree element from one node to another; assumes there is space
  * Modes available:
  * - Move only references; clear pointers in original node (move = 1)
@@ -1007,7 +1019,7 @@ static int bptree_insert_nonfull(bptree_session *bps,
 			return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 		}
 
-		shift_bptree_node_elements(x,pos);
+		shift_bptree_node_elements_right(x,pos);
 		copy_key_val_to_node(x, kv, pos);
 
 		return write_node(bps, x);

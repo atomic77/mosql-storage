@@ -241,12 +241,15 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 /* Definitions that were in the main c file before that we want to be able
 to unit test */
 
-void shift_bptree_node_elements(bptree_node *x, int pos);
+void shift_bptree_node_elements_right(bptree_node *x, int pos);
+void shift_bptree_node_elements_left(bptree_node *x, int pos);
 
+void shift_bptree_node_children_left(bptree_node *x, int pos);
+void shift_bptree_node_children_right(bptree_node *x, int pos);
 void move_bptree_node_element(bptree_node *s, bptree_node *d,
 		int s_pos, int d_pos, int move);
-void shift_bptree_node_children(bptree_node *x, int pos);
 
+void delete_key_from_node(bptree_node *x, int pos);
 int find_position_in_node(bptree_session *bps, bptree_node *x,
 		bptree_key_val *kv, int *pos);
 
