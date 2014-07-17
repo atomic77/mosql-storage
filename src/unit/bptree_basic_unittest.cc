@@ -394,30 +394,6 @@ TEST_F(BptreeCoreTest, FindMissingElement) {
 	EXPECT_EQ(4, pos);
 	
 }
-/*
-TEST_F(BptreeCoreTest, BasicDeleteElement) {
-	int rv, pos, num_elem = 7;
-	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
-		BPTREE_INSERT_UNIQUE_KEY );
-	bptree_set_num_fields(bps, 1);
-	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
-		int32cmp);
-
-	bptree_node *n = make_random_bptree_node(bps, num_elem);
-	
-	// Out of bounds
-	delete_key_from_node(n, num_elem);
-	// Border case
-	delete_key_from_node(n, num_elem);
-	// Middle
-	delete_key_from_node(n, num_elem);
-	// First
-	delete_key_from_node(n, num_elem);
-	// Assert some stuff abuot the size of the node
-	
-}
-*/
-
 TEST_F(BptreeCoreTest, ReadNodeMock) {
 	int rv;
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
@@ -434,10 +410,69 @@ TEST_F(BptreeCoreTest, ReadNodeMock) {
 	EXPECT_EQ(rv, BPTREE_OP_NODE_FOUND);
 	EXPECT_TRUE(uuid_compare(n->self_key, n2->self_key) == 0);
 	EXPECT_EQ(n->key_count, n2->key_count);
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
+	int rv, pos, num_elem = 7;
+	bptree_node *n = make_random_bptree_node(bps, num_elem);
 	
+	EXPECT_EQ(n->key_count, num_elem);
+	// Out of bounds
+	delete_key_from_node(n, num_elem);
+	EXPECT_EQ(n->key_count, num_elem);
+	EXPECT_TRUE(is_node_sane(n));
+	// Border case
+	delete_key_from_node(n, num_elem-1);
+	EXPECT_EQ(n->key_count, num_elem-1);
+	EXPECT_TRUE(is_node_sane(n));
+	// Middle
+	delete_key_from_node(n, num_elem/2);
+	EXPECT_EQ(n->key_count, num_elem-2);
+	EXPECT_TRUE(is_node_sane(n));
+	// First
+	delete_key_from_node(n, 0);
+	EXPECT_EQ(n->key_count, num_elem-3);
+	EXPECT_TRUE(is_node_sane(n));
+	
+	// Final node sanity checking
+	EXPECT_TRUE(is_cell_ordered(bps, n));
+	EXPECT_TRUE(are_key_and_value_sizes_valid(n));
 	
 }
 
+TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
+	// Inserting more than nodesize ensures that at least one split happens
+	int n = BPTREE_NODE_SIZE * 2;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		v = i*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		rv = bptree_delete(bps, &k, sizeof(k), &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
+	// Inserting more than nodesize ensures that at least one split happens
+	int n = BPTREE_NODE_SIZE / 2;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		v = i*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		rv = bptree_delete(bps, &k, sizeof(k), &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+}
 TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 	// Inserting more than nodesize ensures that at least one split happens
 	int n = 5 * BPTREE_NODE_SIZE;
@@ -455,8 +490,6 @@ TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 		EXPECT_EQ(vsize, sizeof(v));
 		EXPECT_EQ(v, i*10000);
 	}
-	
-	
 }
 
 TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
@@ -471,8 +504,6 @@ TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
 	EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	EXPECT_EQ(v, 1234);
 	EXPECT_EQ(vsize, sizeof(v));
-	
-	
 }
 
 // TODO Write basic unit tests for:
