@@ -450,10 +450,11 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
 	
-	for(int i= 1; i <= n; i++) {
+	for(int i= n; i >= 1; i--) {
 		k = i*100;
-		rv = bptree_delete(bps, &k, sizeof(k), &v, &vsize); 
-		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		v = i*10000;
+		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
 }
 
@@ -469,8 +470,8 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
 	
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
-		rv = bptree_delete(bps, &k, sizeof(k), &v, &vsize); 
-		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
 }
 TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {

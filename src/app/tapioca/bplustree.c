@@ -65,6 +65,7 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x,
 bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
 inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) ;
+void clear_key_position(bptree_node *x, int i);
 
 /* There is no longer any good reason to have commit done inside of
 * these methods; the client is unlikely to want to have a committed  bpt 
@@ -300,6 +301,14 @@ int bptree_delete(bptree_session *bps, void *k,
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
 	rv = bptree_delete_recursive(bps, root, &kv);
+	
+	if (root->key_count == 0) {
+		// Set new root
+		uuid_copy(bpm->root_key, root->children[0]);
+		uuid_clear(root->parent);
+		if (write_meta_node(bps, bpm, NULL) < 0) 
+			return BPTREE_OP_METADATA_ERROR;
+	}
 
 	free_node(&root);
 	free_meta_node(&bpm);
@@ -329,7 +338,8 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 		if (rv == BPTREE_OP_KEY_FOUND)
 		{
 			delete_key_from_node(x,i);
-			return write_node(bps, x);
+			if (write_node(bps, x) != BPTREE_OP_SUCCESS) 
+				return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 		}
 		return rv;
 	}
@@ -340,6 +350,8 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 		if (rv == BPTREE_OP_KEY_FOUND)
 		{
 			x->active[i] = 0; 
+			if (write_node(bps, x) != BPTREE_OP_SUCCESS)
+				return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 		}
 		c = read_node(bps, x->children[i], &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
@@ -392,6 +404,18 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 		// Redistribute keys among nodes
 		redistribute_keys(bps, p, cl, cr, i);
 	}
+	// cl is about to become the new root, clear parent before writing back
+	if (p->key_count == 0) {
+		uuid_clear(cl->parent);
+	}
+	
+	if (write_node(bps, p) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	if (write_node(bps, cl) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	if (write_node(bps, cr) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	return BPTREE_OP_SUCCESS;
 }
 
 /*@ Evenly redistribute the keys in c1 and c2 to reduce the chances of underflow
@@ -466,16 +490,10 @@ int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *cl,
 	clear_key_position(p,p->key_count-1);
 	uuid_clear(p->children[p->key_count]);
 	p->key_count--;
+	if (p->key_count == 0) p->node_active = false; // A former root
 	is_node_sane(p);
 	is_node_sane(cl);
 	cr->node_active = 0; // "delete" the node
-	
-	if (write_node(bps, p) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
-	if (write_node(bps, cl) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
-	if (write_node(bps, cr) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 	
 }
 
@@ -840,7 +858,7 @@ static int bptree_split_child(bptree_session *bps,
 void copy_node_data(bptree_node *x, int j, int n)
 {
 	// Crash rather than do something stupid. We are proud, after all.
-	assert(j+n < x->key_count);
+	assert(j+n < BPTREE_NODE_SIZE);
 	assert(j+n >= 0);
 	x->keys[j+n] = malloc(x->key_sizes[j]);
 	memcpy(x->keys[j+n], x->keys[j], x->key_sizes[j]);
