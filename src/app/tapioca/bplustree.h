@@ -41,8 +41,15 @@
 
 #include <paxos.h>
 
+/* Note that these are the Cormen definitions, i.e. let t be the degree of the 
+ * btree, so 2t is the # of children, 2t -1 is the max size of the node
+ * and t -1 is the minimum size of a non-root node
+ */
 #define BPTREE_MIN_DEGREE 9 
-#define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
+#define BPTREE_NODE_MIN_SIZE (BPTREE_MIN_DEGREE -1)
+#define BPTREE_NODE_SIZE (2 * BPTREE_MIN_DEGREE - 1)
+#define BPTREE_NODE_MAX_CHILDREN (2 * BPTREE_MIN_DEGREE)
+
 #define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
 
 #define BPTREE_META_NODE_PACKET_HEADER 0x4
@@ -71,6 +78,7 @@ typedef struct bptree_node {
 	uuid_t parent;
 	uuid_t prev_node;
 	uuid_t next_node;
+	int16_t node_active;
 	char active[BPTREE_NODE_SIZE];
 	int32_t key_sizes[BPTREE_NODE_SIZE];
 	int32_t value_sizes[BPTREE_NODE_SIZE];
@@ -234,16 +242,28 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 /* Definitions that were in the main c file before that we want to be able
 to unit test */
 
-void shift_bptree_node_elements(bptree_node *x, int pos);
+void shift_bptree_node_elements_right(bptree_node *x, int pos);
+void shift_bptree_node_elements_left(bptree_node *x, int pos);
 
+void shift_bptree_node_children_left(bptree_node *x, int pos);
+void shift_bptree_node_children_right(bptree_node *x, int pos);
 void move_bptree_node_element(bptree_node *s, bptree_node *d,
 		int s_pos, int d_pos, int move);
-void shift_bptree_node_children(bptree_node *x, int pos);
 
+void delete_key_from_node(bptree_node *x, int pos);
 int find_position_in_node(bptree_session *bps, bptree_node *x,
 		bptree_key_val *kv, int *pos);
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
+
+// Node assertion functions
+
+int is_bptree_node_sane(bptree_node* n);
+int are_key_and_value_sizes_valid(bptree_node* n);
+int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
+int is_node_sane(bptree_node *n);
+int is_correct_node(bptree_node *n, uuid_t node_key);
 
 inline int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);
