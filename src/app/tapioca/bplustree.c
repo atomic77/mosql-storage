@@ -302,7 +302,7 @@ int bptree_delete(bptree_session *bps, void *k,
 
 	rv = bptree_delete_recursive(bps, root, &kv);
 	
-	if (root->key_count == 0) {
+	if (root->key_count == 0 && !root->leaf) {
 		// Set new root
 		uuid_copy(bpm->root_key, root->children[0]);
 		uuid_clear(root->parent);
