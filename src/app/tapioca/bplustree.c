@@ -2476,15 +2476,15 @@ inline int int64cmp(const void *i1, const void *i2, size_t v_ignored)
 	else { return 0; }
 }
 
-/* TODO Integrate this more sensibly with the collation stuff in mysql;
- * for now we just need a quick and easy way to hack off the first 1-2 bytes
- * that include the string length for <255 or <64k length strings*/
+/* Use this exclusively with CHAR fixed-length types in MySQL
+We now no longer pass in the length because CHAR types are supposed to
+be padded with spaces at the end */ 
 inline int strncmp_mysql(const void *i1, const void *i2, size_t sz)
 {
-	size_t len = sz - (sz > 255 ? 2 : 1);
-	const char *a = (const char*) i1 + (sz > 255 ? 2 : 1);
-	const char *b = (const char*) i2 + (sz > 255 ? 2 : 1);;
-	return strncmp(a,b,len);
+	// size_t len = sz - (sz > 255 ? 2 : 1);
+	//const char *a = (const char*) i1 + (sz > 255 ? 2 : 1);
+	//const char *b = (const char*) i2 + (sz > 255 ? 2 : 1);;
+	return strncmp(i1,i2,sz);
 }
 
 // VARCHARs in MySQL always use 2-byte lengths
