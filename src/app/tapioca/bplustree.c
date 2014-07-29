@@ -871,7 +871,7 @@ void copy_node_data(bptree_node *x, int j, int n)
 /*@ Shift the elements of bptree_node right at position pos*/
 void shift_bptree_node_elements_right(bptree_node *x, int pos)
 {
-	assert(x->key_count < BPTREE_NODE_SIZE);
+	assert(x->key_count <= BPTREE_NODE_SIZE);
 	int j;
 	if(pos > x->key_count-1) return;
 	for (j = x->key_count - 1; j >= pos; j--)
@@ -892,7 +892,7 @@ void shift_bptree_node_children_right(bptree_node *x, int pos)
 /*@ Shift the elements of bptree_node right at position pos*/
 void shift_bptree_node_elements_left(bptree_node *x, int pos)
 {
-	assert(x->key_count < BPTREE_NODE_SIZE && pos > 0);
+	assert(x->key_count <= BPTREE_NODE_SIZE && pos > 0);
 	int j;
 	if(pos > x->key_count-1) return;
 	for (j = pos; j < x->key_count; j++)
