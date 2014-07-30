@@ -45,7 +45,7 @@
  * btree, so 2t is the # of children, 2t -1 is the max size of the node
  * and t -1 is the minimum size of a non-root node
  */
-#define BPTREE_MIN_DEGREE 9 
+#define BPTREE_MIN_DEGREE 3 
 #define BPTREE_NODE_MIN_SIZE (BPTREE_MIN_DEGREE -1)
 #define BPTREE_NODE_SIZE (2 * BPTREE_MIN_DEGREE - 1)
 #define BPTREE_NODE_MAX_CHILDREN (2 * BPTREE_MIN_DEGREE)

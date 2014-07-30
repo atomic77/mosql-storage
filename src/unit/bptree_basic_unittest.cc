@@ -246,8 +246,11 @@ TEST_F(BptreeCoreTest, MetaNodeSerDe) {
 
 TEST_F(BptreeCoreTest, FindKeyInNode) {
 	int rv, num_elem = 7;
-	
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 1);
@@ -276,6 +279,11 @@ TEST_F(BptreeCoreTest, FindKeyInNode) {
 TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 	int rv, num_elem = 7;
 	
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
@@ -314,7 +322,11 @@ TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 	int rv, num_elem = 7;
 	
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
@@ -347,7 +359,11 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 
 TEST_F(BptreeCoreTest, FindMissingElement) {
 	int rv, pos, num_elem = 7;
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY );
 	bptree_set_num_fields(bps, 1);
@@ -395,7 +411,13 @@ TEST_F(BptreeCoreTest, FindMissingElement) {
 	
 }
 TEST_F(BptreeCoreTest, ReadNodeMock) {
-	int rv;
+	int rv, num_elem = 5;
+	
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY );
 	bptree_set_num_fields(bps, 1);
@@ -414,6 +436,11 @@ TEST_F(BptreeCoreTest, ReadNodeMock) {
 
 TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
 	int rv, pos, num_elem = 7;
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	bptree_node *n = make_random_bptree_node(bps, num_elem);
 	
 	EXPECT_EQ(n->key_count, num_elem);
