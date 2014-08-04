@@ -36,7 +36,7 @@ protected:
 	
 	bptree_session *bps;
 	
-	bptree_node * make_random_multi_bptree_node(bptree_session *bps, 
+	bptree_node * makeRandomMultiBptreeNode(bptree_session *bps, 
 		int num_first, int num_second)
 	{
 		if (num_first * num_second >= BPTREE_NODE_SIZE) return NULL;
@@ -73,7 +73,7 @@ protected:
 		
 	}
 	
-	bptree_node * make_random_bptree_node(bptree_session *bps, int num_elem) {
+	bptree_node * makeRandomBptreeNode(bptree_session *bps, int num_elem) {
 		if (num_elem >= BPTREE_NODE_SIZE) return NULL;
 		bptree_node *n = create_new_bptree_node(bps);
 
@@ -97,7 +97,7 @@ protected:
 		
 	}
 	
-	bptree_session * mock_bptree_session_create() {
+	bptree_session * mockBptreeSessionCreate() {
 		
 		bptree_session *bps = (bptree_session *) malloc(sizeof(bptree_session));
 		memset(bps, 0, sizeof(bps));
@@ -105,13 +105,14 @@ protected:
 		bps->bpt_id = 1000;
 		bps->tapioca_client_id = 1;
 		bps->insert_flags = BPTREE_INSERT_UNIQUE_KEY;
+		bps->cursor_node = NULL;
 		bps->t = transaction_new();
 		return bps;
 	}
 	
 	/*@ Assumes that the k-vs in kv[] have been 'inserted' into node already
 	 and were assigned with *v as the value*/
-	void verify_kv_in_node(bptree_node *x, bptree_key_val *kv, int keys)
+	void verifyKvInNode(bptree_node *x, bptree_key_val *kv, int keys)
 	{
 		int rv,pos;
 		int positions[20]; 
@@ -153,7 +154,7 @@ protected:
     
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
-		bps = mock_bptree_session_create();
+		bps = mockBptreeSessionCreate();
 	}
 	
 	virtual void TearDown() {
@@ -168,14 +169,23 @@ protected:
 	int k, v, ksize, vsize;
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
-		bps = mock_bptree_session_create();
-		
-		bptree_initialize_bpt_session(bps, 1000, 
-			BPTREE_OPEN_OVERWRITE, BPTREE_INSERT_UNIQUE_KEY );
+		bps = mockBptreeSessionCreate();
+		createNewMockSession();
+	}
+	
+	void createNewMockSession() {
+		createNewMockSession(1000, 
+				     BPTREE_OPEN_OVERWRITE, 
+				     BPTREE_INSERT_UNIQUE_KEY);
+	}
+	void createNewMockSession(tapioca_bptree_id bpt_id, 
+				  bptree_open_flags o_f, bptree_insert_flags i_f)
+	{
+		bptree_initialize_bpt_session(bps, bpt_id, o_f, i_f);
 		bptree_set_num_fields(bps, 1);
 		bptree_set_field_info(bps, 0, sizeof(int32_t), 
 				      BPTREE_FIELD_COMP_INT_32, int32cmp);
-
+		
 	}
 	
 	
@@ -257,7 +267,7 @@ TEST_F(BptreeCoreTest, FindKeyInNode) {
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	bptree_node *n = makeRandomBptreeNode(bps, num_elem);
 	bptree_key_val kv[3];
 	int keys[3];
 	keys[0] = 0;
@@ -272,7 +282,7 @@ TEST_F(BptreeCoreTest, FindKeyInNode) {
 		kv[i].vsize = sizeof(int);
 	}
 
-	verify_kv_in_node(n, kv, 3);
+	verifyKvInNode(n, kv, 3);
 }
 
 
@@ -294,7 +304,7 @@ TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 
 	int f = 5, s = 2;
 	ASSERT_GE(BPTREE_NODE_SIZE, f * s);
-	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_node *n = makeRandomMultiBptreeNode(bps,f, s);
 	bptree_key_val kv[10];
 	char v[5] = "cccc"; 
 	int c =0;
@@ -315,7 +325,7 @@ TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 		}
 	}
 	//printf("\n");
-	verify_kv_in_node(n, kv, f*s);
+	verifyKvInNode(n, kv, f*s);
 }
 
 
@@ -336,7 +346,7 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 		int32cmp);
 
 	int f = 5, s = 2;
-	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_node *n = makeRandomMultiBptreeNode(bps,f, s);
 	bptree_key_val kv[5];
 	char v[5] = "cccc"; 
 	int c =0;
@@ -353,7 +363,7 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 		c++;
 	}
 	//printf("\n");
-	verify_kv_in_node(n, kv, f);
+	verifyKvInNode(n, kv, f);
 }
 
 
@@ -424,7 +434,7 @@ TEST_F(BptreeCoreTest, ReadNodeMock) {
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = make_random_bptree_node(bps, 5);
+	bptree_node *n = makeRandomBptreeNode(bps, 5);
 	rv = write_node(bps,n);  
 	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	
@@ -441,7 +451,7 @@ TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
 		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
 		return;
 	}
-	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	bptree_node *n = makeRandomBptreeNode(bps, num_elem);
 	
 	EXPECT_EQ(n->key_count, num_elem);
 	// Out of bounds
@@ -467,9 +477,8 @@ TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
 	
 }
 
-TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
-	// Inserting more than nodesize ensures that at least one split happens
-	int n = BPTREE_NODE_SIZE * 2;
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTree) {
+	int n = BPTREE_NODE_SIZE * 5;
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		v = i*10000;
@@ -477,12 +486,84 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
 	
-	for(int i= n; i >= 1; i--) {
+	//for(int i= n; i >= 1; i--) {
+	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		v = i*10000;
 		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesForward) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES);
+	
+	int n = BPTREE_NODE_SIZE * 3;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+	}
+	uuid_t nn;
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesReverse) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES);
+	
+	int n = BPTREE_NODE_SIZE * 5;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+	}
+	uuid_t nn;
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	
+	for(int i= n; i >= 1; i--) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
 }
 
 TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
@@ -494,13 +575,16 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
 		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
-	
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
 }
+
 TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 	// Inserting more than nodesize ensures that at least one split happens
 	int n = 5 * BPTREE_NODE_SIZE;
@@ -533,14 +617,3 @@ TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
 	EXPECT_EQ(v, 1234);
 	EXPECT_EQ(vsize, sizeof(v));
 }
-
-// TODO Write basic unit tests for:
-// find position of elements that don't exist
-// shift_bptree_node_elements
-// shift_bptree_node_children
-// move_bptree_node_element
-// copy_key_val_to_node
-// compar functions
-
-
-

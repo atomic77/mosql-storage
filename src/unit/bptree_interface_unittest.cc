@@ -160,7 +160,7 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 		rv = tapioca_bptree_insert(th, tbpt_id, k, 18, v, 5);
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 		rv = tapioca_commit(th);
-		EXPECT_GE(0, rv);
+		EXPECT_TRUE(rv >= 0);
 		if (i % 250 == 0) printf("Inserted %d keys\n", i);
 	}
 
@@ -176,11 +176,12 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 		rv = tapioca_bptree_update(th, tbpt_id, k, 18, v2, 10);
 		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
 		rv = tapioca_commit(th);
-		ASSERT_GE(0, rv);
+		EXPECT_TRUE(rv >= 0);
 		if (i % 250 == 0) printf("Updated %d keys\n", i);
 	}
 
 }
+
 
 TEST_F(BptreeInterfaceTest, MultiFieldInsertDeleteWithDupeKeys) 
 {
@@ -215,7 +216,8 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertDeleteWithDupeKeys)
 		if (i % 250 == 0) printf("Inserted %d keys\n", i);
 	}
 
-	for (int i = 1; i <= keys; i++)
+	//for (int i = 1; i <= keys; i++)
+	for (int i = keys; i >= 1; i--)
 	{
 		int32_t i1, i2;
 		i1 = i;
@@ -228,9 +230,9 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertDeleteWithDupeKeys)
 		sprintf(v2, "v%03d",i1);
 
 		rv = tapioca_bptree_delete(th, tbpt_id, k, 18, v2, 10);
-		ASSERT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 		rv = tapioca_commit(th);
-		ASSERT_GE(0, rv);
+		EXPECT_TRUE(rv >= 0);
 		if (i % 250 == 0) printf("Deleted %d keys\n", i);
 	}
 

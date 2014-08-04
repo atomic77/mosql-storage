@@ -380,7 +380,7 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 	bptree_node *adj, *cl, *cr;
 	// Choose an adjacent node to redistribute with
 	i_adj = i+1;
-	if (i >= p->key_count -1) {
+	if (i >= p->key_count) {
 		i_adj = i-1;
 	}
 	cl = c;
@@ -393,16 +393,16 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 		cl = adj;
 		cr = c;
 	}
-	
+	int sp_i = (i < i_adj) ? i : i_adj;
 	if (c->key_count + adj->key_count < BPTREE_NODE_SIZE)
 	{
 		// Concatenate (i.e. remove one) nodes
-		concatenate_nodes(bps, p, cl, cr, i);
+		concatenate_nodes(bps, p, cl, cr, sp_i);
 	} 
 	else 
 	{
 		// Redistribute keys among nodes
-		redistribute_keys(bps, p, cl, cr, i);
+		redistribute_keys(bps, p, cl, cr, sp_i);
 	}
 	// cl is about to become the new root, clear parent before writing back
 	if (p->key_count == 0) {
@@ -472,7 +472,8 @@ int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *cl,
 	if(!cl->leaf)
 	{
 		// If not concat'ing a leave we need to move down the split key 
-		move_bptree_node_element(p, cl, cl->key_count, i, false);
+		move_bptree_node_element(p, cl, i, cl->key_count, false);
+		uuid_copy(cl->children[cl->key_count], cr->children[0]);
 	}
 	
 	l = cl->key_count;
@@ -480,8 +481,7 @@ int concatenate_nodes(bptree_session *bps, bptree_node *p, bptree_node *cl,
 	for (r = 0; r < to_move; r++)
 	{
 		move_bptree_node_element(cr, cl, r, l, false);
-		if(!cl->leaf) shift_bptree_node_children_left(cr, 1);
-		// Move children properly
+		if(!cl->leaf) uuid_copy(cl->children[l+1], cr->children[r+1]);
 		l++;
 	}
 	// 'delete' the old parent key by shifting everything over
@@ -789,20 +789,6 @@ static int bptree_split_child(bptree_session *bps,
 
 	bptree_node *n= create_new_bptree_node(bps);
 	n->leaf = y->leaf;
-	/*
-	if (y->leaf)
-	{
-		// If y is a leaf, we want to make sure we maintain the median key
-		n->key_count = BPTREE_MIN_DEGREE;
-		y->key_count = BPTREE_MIN_DEGREE - 1;
-	}
-	else {
-		// If we are splitting a non-leaf, we have BP_DEG * 2 children to
-		// distribute while the median node goes up
-		n->key_count = BPTREE_MIN_DEGREE - 1;
-		y->key_count = BPTREE_MIN_DEGREE - 1;
-	}
-	*/
 	// Shift over elements into new node and null out old stuff
 	for (j = 0; j < BPTREE_NODE_MIN_SIZE + y->leaf; j++)
 	{
@@ -1366,7 +1352,7 @@ static int bptree_index_first_recursive(bptree_session *bps, void *k,
 		if (n->key_count == 0)
 		{
 			bps->eof = 1;
-			assert(bps->cursor_node == NULL); // nothing should have set
+			//assert(bps->cursor_node == NULL); // nothing should have set
 			return BPTREE_OP_EOF; // tree is empty
 		}
 		// In case our tree has only one element
@@ -1680,35 +1666,35 @@ int is_node_sane(bptree_node *n)
 	// probably be enough to catch most cases of corrupt or uninitialized nodes
 	if (!n->node_active) return 1; // Skip these checks if node is deleted
 	if (n == NULL) return 0;
-	if (n->key_count < 0 || n->key_count > BPTREE_NODE_SIZE) return 0;
+	if (n->key_count < 0 || n->key_count > BPTREE_NODE_SIZE) assert(0);
 	// Ensure we don't have any weird corner cases with the children of node
 	if (!n->leaf && n->key_count > 0)
 		if (uuid_is_null(n->children[n->key_count]) ||
-				uuid_is_null(n->children[0])) return 0;
+				uuid_is_null(n->children[0])) assert(0);
 
 	for (i = 0; i < n->key_count; i++)
 	{
-		if(n->keys[i] == NULL) return 0;
-		if(n->values[i] == NULL) return 0;
-		if(n->key_sizes[i] < 0) return 0;
-		if(n->value_sizes[i] < 0) return 0;
+		if(n->keys[i] == NULL) assert(0);
+		if(n->values[i] == NULL) assert(0);
+		if(n->key_sizes[i] < 0) assert(0);
+		if(n->value_sizes[i] < 0) assert(0);
 	}
 
 	if(!n->leaf) {
 		for (i = 0; i <= n->key_count; i++) {
-			if(uuid_is_null(n->children[i])) return 0;
+			if(uuid_is_null(n->children[i])) assert(0);
 		}
 	}
 
 	// Make sure anything outside boundaries is not filled with anything
 	for (i = n->key_count; i < BPTREE_NODE_SIZE; i++)
 	{
-		if(n->keys[i] != NULL || n->values[i] != NULL) return 0;
-		if(n->key_sizes[i] != -1 || n->value_sizes[i] != -1) return 0;
-		if(!uuid_is_null(n->children[i+1])) return 0;
+		if(n->keys[i] != NULL || n->values[i] != NULL) assert(0);
+		if(n->key_sizes[i] != -1 || n->value_sizes[i] != -1) assert(0);
+		if(!uuid_is_null(n->children[i+1])) assert(0);
 	}
 	if(n->key_count < BPTREE_NODE_SIZE &&
-			!uuid_is_null(n->children[BPTREE_NODE_SIZE]) ) return 0;
+			!uuid_is_null(n->children[BPTREE_NODE_SIZE]) ) assert(0);
 	return 1;
 }
 
