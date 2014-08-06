@@ -172,7 +172,7 @@ inline int bptree_compar_keys(bptree_session *bps,
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields);
-inline void get_key_val_from_node(bptree_node *n, int i, bptree_key_val *kv);
+inline void get_key_val_ref_from_node(bptree_node *n, int i, bptree_key_val *kv);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
 bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
 inline void free_key_val(bptree_key_val **kv);
@@ -220,7 +220,7 @@ int output_bptree(bptree_session *bps, int i ) ;
 int bptree_sequential_read(bptree_session *bps, int binary);
 
 
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int is_node_ordered(bptree_session *bps, bptree_node* y);
 int free_node(bptree_node **n);
 
 void assert_parent_child(bptree_session *bps, bptree_node *p, bptree_node *c);
@@ -247,8 +247,10 @@ void shift_bptree_node_elements_left(bptree_node *x, int pos);
 
 void shift_bptree_node_children_left(bptree_node *x, int pos);
 void shift_bptree_node_children_right(bptree_node *x, int pos);
+void copy_bptree_node_element(bptree_node *s, bptree_node *d,
+		int s_pos, int d_pos);
 void move_bptree_node_element(bptree_node *s, bptree_node *d,
-		int s_pos, int d_pos, int move);
+		int s_pos, int d_pos);
 
 void delete_key_from_node(bptree_node *x, int pos);
 int find_position_in_node(bptree_session *bps, bptree_node *x,
@@ -256,17 +258,20 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 
+int redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
+int concatenate_nodes(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
 // Node assertion functions
 
-int is_bptree_node_sane(bptree_node* n);
-int are_key_and_value_sizes_valid(bptree_node* n);
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int is_node_ordered(bptree_session *bps, bptree_node* y);
 int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
 int is_node_sane(bptree_node *n);
 int is_correct_node(bptree_node *n, uuid_t node_key);
 
 inline int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);
+
+int is_valid_traversal(bptree_session *bps, bptree_node *x,
+		bptree_node *n,int i);
 
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);
