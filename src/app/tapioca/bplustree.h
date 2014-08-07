@@ -38,7 +38,6 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <execinfo.h>
-
 #include <paxos.h>
 
 /* Note that these are the Cormen definitions, i.e. let t be the degree of the 
@@ -204,6 +203,9 @@ int write_meta_node(bptree_session *bps,
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root);
 
+void bptree_split_child(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr);
+
 void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize);
 //bptree_meta_node * unmarshall_bptree_meta_node(const void *buf);
 bptree_meta_node * unmarshall_bptree_meta_node(const void *buf,size_t sz);
@@ -258,8 +260,8 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 
-int redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
-int concatenate_nodes(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
+void redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
+void concatenate_nodes(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
 // Node assertion functions
 
 int is_node_ordered(bptree_session *bps, bptree_node* y);
