@@ -36,7 +36,7 @@ protected:
 	
 	bptree_session *bps;
 	uuid_t nn;
-	bool DBUG = false;
+	bool DBUG;
 	
 	bptree_node * makeRandomMultiBptreeNode(bptree_session *bps, 
 		int num_first, int num_second)
@@ -165,6 +165,7 @@ protected:
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
 		bps = mockBptreeSessionCreate();
+		DBUG = false;
 	}
 	
 	virtual void TearDown() {
