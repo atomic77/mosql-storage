@@ -160,7 +160,7 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 		rv = tapioca_bptree_insert(th, tbpt_id, k, 18, v, 5);
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 		rv = tapioca_commit(th);
-		EXPECT_GE(0, rv);
+		EXPECT_TRUE(rv >= 0);
 		if (i % 250 == 0) printf("Inserted %d keys\n", i);
 	}
 
@@ -176,11 +176,68 @@ TEST_F(BptreeInterfaceTest, MultiFieldInsertUpdate)
 		rv = tapioca_bptree_update(th, tbpt_id, k, 18, v2, 10);
 		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
 		rv = tapioca_commit(th);
-		ASSERT_GE(0, rv);
+		EXPECT_TRUE(rv >= 0);
 		if (i % 250 == 0) printf("Updated %d keys\n", i);
 	}
 
 }
+
+
+TEST_F(BptreeInterfaceTest, MultiFieldInsertDeleteWithDupeKeys) 
+{
+	char *kptr;
+	createNewTree(tbpt_id,BPTREE_OPEN_OVERWRITE,BPTREE_INSERT_ALLOW_DUPES);
+	tapioca_bptree_set_num_fields(th, tbpt_id, 4);
+	tapioca_bptree_set_field_info(th, tbpt_id, 0, 5, BPTREE_FIELD_COMP_STRNCMP);
+	tapioca_bptree_set_field_info(th, tbpt_id, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
+	tapioca_bptree_set_field_info(th, tbpt_id, 2, 5, BPTREE_FIELD_COMP_STRNCMP);
+	tapioca_bptree_set_field_info(th, tbpt_id, 3, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
+
+	char v1[10], v2[10];
+	memset(k,0,18);
+	memset(v1,0,10);
+	memset(v2,0,10);
+	for (int i = 1; i <= keys; i++)
+	{
+		int32_t i1, i2;
+		i1 = i;
+		i2 = i / 2;
+		sprintf(k, "a%03d", i);
+		kptr = k;
+		memcpy(kptr + 5, &i1, sizeof(int32_t));
+		memcpy(kptr + 9, k, 5);
+		memcpy(kptr + 14, &i2, sizeof(int32_t));
+		sprintf(v1, "v%03d",i1);
+
+		rv = tapioca_bptree_insert(th, tbpt_id, k, 18, v1, 10);
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		rv = tapioca_commit(th);
+		EXPECT_GE(0, rv);
+		if (i % 250 == 0) printf("Inserted %d keys\n", i);
+	}
+
+	//for (int i = 1; i <= keys; i++)
+	for (int i = keys; i >= 1; i--)
+	{
+		int32_t i1, i2;
+		i1 = i;
+		i2 = i / 2;
+		sprintf(k, "a%03d", i);
+		kptr = k;
+		memcpy(kptr + 5, &i1, sizeof(int32_t));
+		memcpy(kptr + 9, k, 5);
+		memcpy(kptr + 14, &i2, sizeof(int32_t));
+		sprintf(v2, "v%03d",i1);
+
+		rv = tapioca_bptree_delete(th, tbpt_id, k, 18, v2, 10);
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		rv = tapioca_commit(th);
+		EXPECT_TRUE(rv >= 0);
+		if (i % 250 == 0) printf("Deleted %d keys\n", i);
+	}
+
+}
+
 
 class BptreeCursorTest : public BptreeTestBase {
 	

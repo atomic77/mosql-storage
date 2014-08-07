@@ -35,8 +35,10 @@ class BptreeCoreTest : public testing::Test {
 protected:
 	
 	bptree_session *bps;
+	uuid_t nn;
+	bool DBUG = false;
 	
-	bptree_node * make_random_multi_bptree_node(bptree_session *bps, 
+	bptree_node * makeRandomMultiBptreeNode(bptree_session *bps, 
 		int num_first, int num_second)
 	{
 		if (num_first * num_second >= BPTREE_NODE_SIZE) return NULL;
@@ -67,14 +69,24 @@ protected:
 			
 		}
 		//printf("\n");
-		assert(is_cell_ordered(bps, n));
+		assert(is_node_ordered(bps, n) == 0);
 		
 		return n;
 		
 	}
 	
-	bptree_node * make_random_bptree_node(bptree_session *bps, int num_elem) {
-		if (num_elem >= BPTREE_NODE_SIZE) return NULL;
+	int validateTree() {
+		int rv;
+		uuid_clear(nn);
+		rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		uuid_clear(nn);
+		rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_SEQUENTIALLY, nn);
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	bptree_node * makeRandomBptreeNode(bptree_session *bps, int num_elem) {
+		if (num_elem > BPTREE_NODE_SIZE) return NULL;
 		bptree_node *n = create_new_bptree_node(bps);
 
 			// TODO fill in some data
@@ -91,13 +103,11 @@ protected:
 			copy_key_val_to_node(n,&kv,i);
 			
 		}
-		assert(is_cell_ordered(bps, n));
 		
 		return n;
-		
 	}
 	
-	bptree_session * mock_bptree_session_create() {
+	bptree_session * mockBptreeSessionCreate() {
 		
 		bptree_session *bps = (bptree_session *) malloc(sizeof(bptree_session));
 		memset(bps, 0, sizeof(bps));
@@ -105,13 +115,14 @@ protected:
 		bps->bpt_id = 1000;
 		bps->tapioca_client_id = 1;
 		bps->insert_flags = BPTREE_INSERT_UNIQUE_KEY;
+		bps->cursor_node = NULL;
 		bps->t = transaction_new();
 		return bps;
 	}
 	
 	/*@ Assumes that the k-vs in kv[] have been 'inserted' into node already
 	 and were assigned with *v as the value*/
-	void verify_kv_in_node(bptree_node *x, bptree_key_val *kv, int keys)
+	void verifyKvInNode(bptree_node *x, bptree_key_val *kv, int keys)
 	{
 		int rv,pos;
 		int positions[20]; 
@@ -153,7 +164,7 @@ protected:
     
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
-		bps = mock_bptree_session_create();
+		bps = mockBptreeSessionCreate();
 	}
 	
 	virtual void TearDown() {
@@ -168,14 +179,138 @@ protected:
 	int k, v, ksize, vsize;
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
-		bps = mock_bptree_session_create();
+		bps = mockBptreeSessionCreate();
+		createNewMockSession();
+	}
+	
+	bptree_node * makeIncrementalBptreeNode(bptree_session *bps, 
+						int start, int end,
+						int num_elem) 
+	{
+		// Make a roughly spaced node with n elements
+		if (num_elem > BPTREE_NODE_SIZE) return NULL;
+		bptree_node *n = create_new_bptree_node(bps);
 		
-		bptree_initialize_bpt_session(bps, 1000, 
-			BPTREE_OPEN_OVERWRITE, BPTREE_INSERT_UNIQUE_KEY );
+		int incr = (end - start) / (num_elem);
+
+		for (int i = 0; i < num_elem; i++) 
+		{
+			int k = start + (i * incr);
+			int v = k*100;
+			bptree_key_val kv;
+			kv.k = (unsigned char *)&k;
+			kv.v = (unsigned char *)&v;
+			kv.ksize = sizeof(k);
+			kv.vsize = sizeof(v);
+			copy_key_val_to_node(n,&kv,i);
+			
+		}
+		assert(is_node_ordered(bps, n) == 0);
+		
+		return n;
+		
+	}
+	
+	void createMiniTree(bptree_node **parent, 
+				   bptree_node **cleft, int l_sz,
+				   bptree_node **cright, int r_sz,
+				   bool hasChildren) 
+	{
+		
+		bptree_node *p, *cl, *cr;
+		p = create_new_bptree_node(bps);
+		p->leaf = 0;
+		cl = makeIncrementalBptreeNode(bps, 100, 200, l_sz);
+		cr = makeIncrementalBptreeNode(bps, 300, 400, r_sz);
+		bptree_key_val *kv = copy_key_val_from_node(cr, 0);
+		if (hasChildren) {
+			int a = 250;
+			memcpy(kv->k, &a, sizeof(int));
+		}
+		copy_key_val_to_node(p, kv, 0);
+		uuid_copy(p->children[0],cl->self_key);
+		uuid_copy(p->children[1],cr->self_key);
+		
+		*parent = p;
+		*cleft = cl;
+		*cright = cr;
+		
+		if (hasChildren) {
+			// Create fake children
+			cl->leaf = 0;
+			cr->leaf = 0;
+			for (int i =0; i <= cl->key_count; i++) {
+				uuid_generate_random(cl->children[i]);
+			}
+			for (int i =0; i <= cr->key_count; i++) {
+				uuid_generate_random(cr->children[i]);
+			}
+		} else {
+			
+			uuid_copy(cl->next_node, cr->self_key);
+		}
+		
+		EXPECT_EQ(is_valid_traversal(bps, p, cl, 0), 0);
+		EXPECT_EQ(is_valid_traversal(bps, p, cr, 1), 0);
+		
+		EXPECT_EQ(is_node_sane(p), 0);
+		EXPECT_EQ(is_node_sane(cl), 0);
+		EXPECT_EQ(is_node_sane(cr), 0);
+		
+		
+	}
+	
+	void miniTreeSanityChecks(bptree_node *p, bptree_node *cl, 
+					 bptree_node *cr)
+	{
+		
+		EXPECT_EQ(is_node_sane(p), 0);
+		EXPECT_EQ(is_node_sane(cl), 0);
+		EXPECT_EQ(is_node_sane(cr), 0);
+		EXPECT_EQ(is_node_ordered(bps,cl), 0);
+		EXPECT_EQ(is_node_ordered(bps,cr), 0);
+		
+		EXPECT_EQ(is_valid_traversal(bps,p,cl,0), 0);
+		EXPECT_EQ(is_valid_traversal(bps,p,cr,1), 0);
+		
+		EXPECT_EQ(uuid_compare(p->children[0], cl->self_key), 0);
+		EXPECT_EQ(uuid_compare(p->children[1], cr->self_key), 0);
+	
+		if (!cl->leaf) {
+			int c;
+			/* Sanity checks will find simple corruptions, but 
+			 * make sure we didn't do any funky copying or duplication*/
+			for (int l =0; l < cl->key_count; l++) {
+				c = uuid_compare(cl->children[l], 
+						 cl->children[l+1]);
+				EXPECT_NE(c, 0);
+			}
+			
+			for (int r =0; r < cr->key_count; r++) {
+				c = uuid_compare(cl->children[r], 
+						 cl->children[r+1]);
+				EXPECT_NE(c, 0);
+			}
+		} else  {
+			EXPECT_EQ(uuid_compare(cl->next_node, cr->self_key), 0);
+		}
+	}
+	
+	
+	
+	void createNewMockSession() {
+		createNewMockSession(1000, 
+				     BPTREE_OPEN_OVERWRITE, 
+				     BPTREE_INSERT_UNIQUE_KEY);
+	}
+	void createNewMockSession(tapioca_bptree_id bpt_id, 
+				  bptree_open_flags o_f, bptree_insert_flags i_f)
+	{
+		bptree_initialize_bpt_session(bps, bpt_id, o_f, i_f);
 		bptree_set_num_fields(bps, 1);
 		bptree_set_field_info(bps, 0, sizeof(int32_t), 
 				      BPTREE_FIELD_COMP_INT_32, int32cmp);
-
+		
 	}
 	
 	
@@ -246,15 +381,18 @@ TEST_F(BptreeCoreTest, MetaNodeSerDe) {
 
 TEST_F(BptreeCoreTest, FindKeyInNode) {
 	int rv, num_elem = 7;
-	
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 1);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	bptree_node *n = makeRandomBptreeNode(bps, num_elem);
 	bptree_key_val kv[3];
 	int keys[3];
 	keys[0] = 0;
@@ -269,13 +407,19 @@ TEST_F(BptreeCoreTest, FindKeyInNode) {
 		kv[i].vsize = sizeof(int);
 	}
 
-	verify_kv_in_node(n, kv, 3);
+	verifyKvInNode(n, kv, 3);
 }
 
 
 TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 	int rv, num_elem = 7;
 	
+	int f = 4, s = 2;
+	if(BPTREE_NODE_SIZE < f * s) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
@@ -284,9 +428,7 @@ TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	int f = 5, s = 2;
-	ASSERT_GE(BPTREE_NODE_SIZE, f * s);
-	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_node *n = makeRandomMultiBptreeNode(bps,f, s);
 	bptree_key_val kv[10];
 	char v[5] = "cccc"; 
 	int c =0;
@@ -307,14 +449,19 @@ TEST_F(BptreeCoreTest, FindMultiLevelKeyInNode) {
 		}
 	}
 	//printf("\n");
-	verify_kv_in_node(n, kv, f*s);
+	verifyKvInNode(n, kv, f*s);
 }
 
 
 TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 	int rv, num_elem = 7;
 	
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	int f = 4, s = 2;
+	if(BPTREE_NODE_SIZE < f * s) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE, 
 		BPTREE_INSERT_UNIQUE_KEY);
 	bptree_set_num_fields(bps, 2);
@@ -323,8 +470,7 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	int f = 5, s = 2;
-	bptree_node *n = make_random_multi_bptree_node(bps,f, s);
+	bptree_node *n = makeRandomMultiBptreeNode(bps,f, s);
 	bptree_key_val kv[5];
 	char v[5] = "cccc"; 
 	int c =0;
@@ -341,13 +487,17 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 		c++;
 	}
 	//printf("\n");
-	verify_kv_in_node(n, kv, f);
+	verifyKvInNode(n, kv, f);
 }
 
 
 TEST_F(BptreeCoreTest, FindMissingElement) {
 	int rv, pos, num_elem = 7;
-	ASSERT_GE(BPTREE_NODE_SIZE, 7);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY );
 	bptree_set_num_fields(bps, 1);
@@ -375,8 +525,8 @@ TEST_F(BptreeCoreTest, FindMissingElement) {
 	copy_key_val_to_node(n, &kv, 3);
 	EXPECT_EQ(k, *(int *)n->keys[3]);
 	
-	rv = is_cell_ordered(bps, n);
-	EXPECT_TRUE(rv != 0);
+	rv = is_node_ordered(bps, n);
+	EXPECT_EQ(rv, 0);
 	
 	k = 7; 
 	pos = find_position_in_node(bps, n, &kv, &rv);
@@ -395,14 +545,20 @@ TEST_F(BptreeCoreTest, FindMissingElement) {
 	
 }
 TEST_F(BptreeCoreTest, ReadNodeMock) {
-	int rv;
+	int rv, num_elem = 5;
+	
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
 	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
 		BPTREE_INSERT_UNIQUE_KEY );
 	bptree_set_num_fields(bps, 1);
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = make_random_bptree_node(bps, 5);
+	bptree_node *n = makeRandomBptreeNode(bps, 5);
 	rv = write_node(bps,n);  
 	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	
@@ -414,35 +570,38 @@ TEST_F(BptreeCoreTest, ReadNodeMock) {
 
 TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
 	int rv, pos, num_elem = 7;
-	bptree_node *n = make_random_bptree_node(bps, num_elem);
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
+	bptree_node *n = makeRandomBptreeNode(bps, num_elem);
 	
 	EXPECT_EQ(n->key_count, num_elem);
 	// Out of bounds
 	delete_key_from_node(n, num_elem);
 	EXPECT_EQ(n->key_count, num_elem);
-	EXPECT_TRUE(is_node_sane(n));
+	EXPECT_TRUE(is_node_sane(n) == 0);
 	// Border case
 	delete_key_from_node(n, num_elem-1);
 	EXPECT_EQ(n->key_count, num_elem-1);
-	EXPECT_TRUE(is_node_sane(n));
+	EXPECT_TRUE(is_node_sane(n) == 0);
 	// Middle
 	delete_key_from_node(n, num_elem/2);
 	EXPECT_EQ(n->key_count, num_elem-2);
-	EXPECT_TRUE(is_node_sane(n));
+	EXPECT_TRUE(is_node_sane(n) == 0);
 	// First
 	delete_key_from_node(n, 0);
 	EXPECT_EQ(n->key_count, num_elem-3);
-	EXPECT_TRUE(is_node_sane(n));
+	EXPECT_TRUE(is_node_sane(n) == 0);
 	
 	// Final node sanity checking
-	EXPECT_TRUE(is_cell_ordered(bps, n));
-	EXPECT_TRUE(are_key_and_value_sizes_valid(n));
+	EXPECT_TRUE(is_node_ordered(bps, n) == 0);
 	
 }
 
-TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
-	// Inserting more than nodesize ensures that at least one split happens
-	int n = BPTREE_NODE_SIZE * 2;
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTree) {
+	int n = BPTREE_NODE_SIZE * 5;
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		v = i*10000;
@@ -450,12 +609,83 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromHeightTwoTree) {
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
 	
-	for(int i= n; i >= 1; i--) {
+	//for(int i= n; i >= 1; i--) {
+	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		v = i*10000;
 		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesForward) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES);
+	
+	int n = BPTREE_NODE_SIZE * 3;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+	}
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesReverse) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES);
+	
+	int n = BPTREE_NODE_SIZE * 5;
+	for(int i= 1; i <= n; i++) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+	}
+	uuid_t nn;
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	
+	for(int i= n; i >= 1; i--) {
+		k = i*100;
+		for (int j = 1; j < 3; j++) {
+			v = i*10000 + j;
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
 }
 
 TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
@@ -467,13 +697,266 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
 		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
-	
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
 		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 	}
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
 }
+
+// STUBS: Add similar test cases for concat and split
+TEST_F(BptreeIntBasedTreeTest, ConcatUnderflowLeaf) {
+	
+	bptree_node *cl, *cr, *p;
+
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE - 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE , false);
+	
+	if (DBUG) {
+		printf("BEFORE concatenate:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	concatenate_nodes(p,cl,cr,0);
+	
+	if (DBUG) {
+		printf("AFTER concatenate:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	
+	// Concat should have 'deleted' both parent and right node
+	EXPECT_EQ(p->key_count, 0);
+	EXPECT_EQ(cr->key_count, 0);
+	EXPECT_TRUE(p->node_active == 0);
+	EXPECT_TRUE(cr->node_active == 0);
+	EXPECT_EQ(is_node_ordered(bps,cl), 0);
+	// Since this is a leaf, the split key was already there
+	EXPECT_EQ(cl->key_count, BPTREE_NODE_MIN_SIZE * 2 - 1);
+}
+
+TEST_F(BptreeIntBasedTreeTest, ConcatUnderflowNonLeaf) {
+	
+	bptree_node *cl, *cr, *p;
+
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE - 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE, true);
+	
+	if (DBUG) {
+		printf("BEFORE concatenate:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	concatenate_nodes(p,cl,cr,0);
+	
+	if (DBUG) {
+		printf("AFTER concatenate:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	
+	// Concat should have 'deleted' both parent and right node
+	EXPECT_EQ(p->key_count, 0);
+	EXPECT_EQ(cr->key_count, 0);
+	EXPECT_TRUE(p->node_active == 0);
+	EXPECT_TRUE(cr->node_active == 0);
+	EXPECT_EQ(is_node_ordered(bps,cl), 0);
+	EXPECT_EQ(cl->key_count, BPTREE_NODE_MIN_SIZE * 2);
+	
+}
+	
+TEST_F(BptreeIntBasedTreeTest, SplitOverflowNonLeaf) {
+	
+	bptree_node *cl, *cr1, *cr2, *p;
+
+	createMiniTree(&p, &cl, BPTREE_NODE_SIZE, 
+			      &cr2, BPTREE_NODE_MIN_SIZE, true);
+	
+	// Make a copy of all children of the full node, and make sure
+	// they were distributed properly across the two nodes
+	uuid_t children[BPTREE_NODE_SIZE+1];
+	for (int i=0; i<= BPTREE_NODE_SIZE; i++) {
+		uuid_copy(children[i], cl->children[i]);
+	}
+	
+	cr1 = create_new_bptree_node(bps);
+	if (DBUG) {
+		printf("BEFORE split:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr2);
+	}
+	
+	bptree_split_child(bps, p, 0, cl, cr1);
+	
+	if (DBUG) {
+		printf("AFTER split:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr1);
+		dump_node_info(bps, cr2);
+	}
+	
+	for (int i=0; i<= BPTREE_NODE_MIN_SIZE; i++) {
+		EXPECT_EQ(uuid_compare(cl->children[i],children[i]), 0);
+		EXPECT_EQ(uuid_compare(cr1->children[i],
+				       children[i+BPTREE_NODE_MIN_SIZE+1]), 0);
+	}
+	
+	EXPECT_EQ(p->key_count, 2);
+	EXPECT_EQ(cl->key_count, BPTREE_NODE_MIN_SIZE);
+	EXPECT_EQ(cr1->key_count, BPTREE_NODE_MIN_SIZE);
+	EXPECT_EQ(cr2->key_count, BPTREE_NODE_MIN_SIZE);
+	
+	EXPECT_EQ(are_split_cells_valid(bps, p, 0, cl, cr1), 0);
+	
+	// Ensure links were maintained properly
+	EXPECT_EQ(uuid_compare(p->children[0], cl->self_key), 0);
+	EXPECT_EQ(uuid_compare(p->children[1], cr1->self_key), 0);
+	EXPECT_EQ(uuid_compare(p->children[2], cr2->self_key), 0);
+}
+
+TEST_F(BptreeIntBasedTreeTest, SplitOverflowLeaf) {
+	bptree_node *cl, *cr1, *cr2, *p;
+
+	createMiniTree(&p, &cl, BPTREE_NODE_SIZE, 
+			      &cr2, BPTREE_NODE_MIN_SIZE, false);
+	
+	cr1 = create_new_bptree_node(bps);
+	if (DBUG) {
+		printf("BEFORE split:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr2);
+	}
+	
+	bptree_split_child(bps, p, 0, cl, cr1);
+	
+	if (DBUG) {
+		printf("AFTER split:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr1);
+		dump_node_info(bps, cr2);
+	}
+	
+	EXPECT_TRUE(p->key_count == 2);
+	EXPECT_EQ(cl->key_count, BPTREE_NODE_MIN_SIZE);
+	EXPECT_EQ(cr1->key_count, BPTREE_NODE_MIN_SIZE + 1);
+	EXPECT_EQ(cr2->key_count, BPTREE_NODE_MIN_SIZE);
+	
+	EXPECT_EQ(are_split_cells_valid(bps, p, 0, cl, cr1), 0);
+	
+	// Ensure links were maintained properly
+	EXPECT_EQ(uuid_compare(p->children[0], cl->self_key), 0);
+	EXPECT_EQ(uuid_compare(p->children[1], cr1->self_key), 0);
+	EXPECT_EQ(uuid_compare(p->children[2], cr2->self_key), 0);
+	
+	EXPECT_EQ(uuid_compare(cl->next_node, cr1->self_key), 0);
+	EXPECT_EQ(uuid_compare(cr1->next_node, cr2->self_key), 0);
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, RedistUnderflowNonLeaf) {
+	bptree_node *cl, *cr, *p;
+
+	///////////////////////////////////////////////////////////////
+	// Right-to-left transfer 
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE - 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE + 1, true);
+	
+	redistribute_keys(p,cl,cr,0);
+	
+	EXPECT_TRUE(p->key_count == 1);
+	EXPECT_TRUE(cl->key_count == BPTREE_NODE_MIN_SIZE);
+	EXPECT_TRUE(cr->key_count == BPTREE_NODE_MIN_SIZE);
+		
+	miniTreeSanityChecks(p,cl,cr);
+	
+	///////////////////////////////////////////////////////////////
+	// Left-to-right transfer 
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE + 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE - 1, true);
+	
+	if (DBUG) {
+		printf("BEFORE redist:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	redistribute_keys(p,cl,cr,0);
+	
+	if (DBUG) {
+		printf("\n\nAFTER redist:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	EXPECT_TRUE(p->key_count == 1);
+	EXPECT_TRUE(cl->key_count == BPTREE_NODE_MIN_SIZE);
+	EXPECT_TRUE(cr->key_count == BPTREE_NODE_MIN_SIZE);
+		
+		
+	miniTreeSanityChecks(p,cl,cr);
+}
+	
+TEST_F(BptreeIntBasedTreeTest, RedistUnderflowLeaf) {
+	bptree_node *cl, *cr, *p;
+
+	///////////////////////////////////////////////////////////////
+	// Right-to-left transfer 
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE - 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE + 1, false);
+	
+	if (DBUG) {
+		printf("BEFORE redist:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	redistribute_keys(p,cl,cr,0);
+	
+	if (DBUG) {
+		printf("\n\nAFTER redist:\n");
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+	}
+	
+	EXPECT_TRUE(p->key_count == 1);
+	EXPECT_TRUE(cl->key_count == BPTREE_NODE_MIN_SIZE);
+	EXPECT_TRUE(cr->key_count == BPTREE_NODE_MIN_SIZE);
+		
+	miniTreeSanityChecks(p,cl,cr);
+		
+	///////////////////////////////////////////////////////////////
+	// Left-to-right transfer 
+	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE + 1, 
+			      &cr, BPTREE_NODE_MIN_SIZE - 1, false);
+	
+	redistribute_keys(p,cl,cr,0);
+	
+	EXPECT_TRUE(p->key_count == 1);
+	EXPECT_TRUE(cl->key_count == BPTREE_NODE_MIN_SIZE);
+	EXPECT_TRUE(cr->key_count == BPTREE_NODE_MIN_SIZE);
+		
+	miniTreeSanityChecks(p,cl,cr);
+}
+	
 TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 	// Inserting more than nodesize ensures that at least one split happens
 	int n = 5 * BPTREE_NODE_SIZE;
@@ -506,14 +989,3 @@ TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
 	EXPECT_EQ(v, 1234);
 	EXPECT_EQ(vsize, sizeof(v));
 }
-
-// TODO Write basic unit tests for:
-// find position of elements that don't exist
-// shift_bptree_node_elements
-// shift_bptree_node_children
-// move_bptree_node_element
-// copy_key_val_to_node
-// compar functions
-
-
-

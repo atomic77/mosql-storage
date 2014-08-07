@@ -38,14 +38,13 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <execinfo.h>
-
 #include <paxos.h>
 
 /* Note that these are the Cormen definitions, i.e. let t be the degree of the 
  * btree, so 2t is the # of children, 2t -1 is the max size of the node
  * and t -1 is the minimum size of a non-root node
  */
-#define BPTREE_MIN_DEGREE 9 
+#define BPTREE_MIN_DEGREE 3 
 #define BPTREE_NODE_MIN_SIZE (BPTREE_MIN_DEGREE -1)
 #define BPTREE_NODE_SIZE (2 * BPTREE_MIN_DEGREE - 1)
 #define BPTREE_NODE_MAX_CHILDREN (2 * BPTREE_MIN_DEGREE)
@@ -172,7 +171,7 @@ inline int bptree_compar_keys(bptree_session *bps,
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields);
-inline void get_key_val_from_node(bptree_node *n, int i, bptree_key_val *kv);
+inline void get_key_val_ref_from_node(bptree_node *n, int i, bptree_key_val *kv);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
 bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
 inline void free_key_val(bptree_key_val **kv);
@@ -204,6 +203,9 @@ int write_meta_node(bptree_session *bps,
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root);
 
+void bptree_split_child(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr);
+
 void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize);
 //bptree_meta_node * unmarshall_bptree_meta_node(const void *buf);
 bptree_meta_node * unmarshall_bptree_meta_node(const void *buf,size_t sz);
@@ -220,7 +222,7 @@ int output_bptree(bptree_session *bps, int i ) ;
 int bptree_sequential_read(bptree_session *bps, int binary);
 
 
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int is_node_ordered(bptree_session *bps, bptree_node* y);
 int free_node(bptree_node **n);
 
 void assert_parent_child(bptree_session *bps, bptree_node *p, bptree_node *c);
@@ -247,8 +249,10 @@ void shift_bptree_node_elements_left(bptree_node *x, int pos);
 
 void shift_bptree_node_children_left(bptree_node *x, int pos);
 void shift_bptree_node_children_right(bptree_node *x, int pos);
+void copy_bptree_node_element(bptree_node *s, bptree_node *d,
+		int s_pos, int d_pos);
 void move_bptree_node_element(bptree_node *s, bptree_node *d,
-		int s_pos, int d_pos, int move);
+		int s_pos, int d_pos);
 
 void delete_key_from_node(bptree_node *x, int pos);
 int find_position_in_node(bptree_session *bps, bptree_node *x,
@@ -256,17 +260,20 @@ int find_position_in_node(bptree_session *bps, bptree_node *x,
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 
+void redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
+void concatenate_nodes(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
 // Node assertion functions
 
-int is_bptree_node_sane(bptree_node* n);
-int are_key_and_value_sizes_valid(bptree_node* n);
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int is_node_ordered(bptree_session *bps, bptree_node* y);
 int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
 int is_node_sane(bptree_node *n);
 int is_correct_node(bptree_node *n, uuid_t node_key);
 
 inline int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);
+
+int is_valid_traversal(bptree_session *bps, bptree_node *x,
+		bptree_node *n,int i);
 
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);
