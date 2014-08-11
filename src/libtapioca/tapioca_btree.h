@@ -56,7 +56,8 @@ enum bptree_debug_option
 	BPTREE_DEBUG_DUMP_SEQUENTIALLY=2, /* _next() based dump of tree */
 	BPTREE_DEBUG_DUMP_RECURSIVELY=3, /* recursive traversal of tree */
 	BPTREE_DEBUG_INDEX_RECURSIVE_SCAN=4, /* multi-node compatible recurs. scan*/
-	BPTREE_DEBUG_DUMP_GRAPHVIZ=5 /* Dump graphviz-viewable tree*/
+	BPTREE_DEBUG_DUMP_GRAPHVIZ=5, /* Dump graphviz-viewable tree*/
+	BPTREE_DEBUG_DUMP_NODE_DETAILS=6
 };
 
 enum bptree_field_comparator {

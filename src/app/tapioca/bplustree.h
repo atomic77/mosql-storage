@@ -227,6 +227,7 @@ int free_node(bptree_node **n);
 
 void assert_parent_child(bptree_session *bps, bptree_node *p, bptree_node *c);
 void dump_node_info(bptree_session *bps, bptree_node *n);
+void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp);
 
 void print_trace (void);
 

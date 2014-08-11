@@ -78,6 +78,8 @@ void bptree_split_child_leaf(bptree_session *bps, bptree_node* p, int i,
 void bptree_split_child_nonleaf(bptree_session *bps, bptree_node* p, int i, 
 		       bptree_node* cl, bptree_node *cr);
 
+void traversal_check(bptree_session *bps, bptree_node *x, bptree_node *n,int i);
+
 /* There is no longer any good reason to have commit done inside of
 * these methods; the client is unlikely to want to have a committed  bpt 
 * if the other metadata it writes has to be retried. i.e. merge these next 
@@ -789,7 +791,7 @@ static int bptree_update_recursive(bptree_session *bps,
 	{
 		bptree_node *n = read_node(bps, x->children[i], &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-		assert(is_valid_traversal(bps, x, n, i) == 0);
+		traversal_check(bps, x, n, i);
 
 		if (i <= x->key_count && i > 0)
 		{
@@ -1261,8 +1263,7 @@ static int bptree_search_recursive(bptree_session *bps,
 			kv->vsize = 0;
 			return rv;
 		}
-		rva = is_valid_traversal(bps, x, n, i);
-		assert(rva == 0);
+		traversal_check(bps, x, n, i);
 		rv = bptree_search_recursive(bps, n, kv);
 		free_node(&n);
 		return rv;
@@ -2312,6 +2313,17 @@ void * create_meta_key(bptree_session *bps, size_t *ksize)
 	return k;
 }
 
+void traversal_check(bptree_session *bps, bptree_node *x, bptree_node *n,int i)
+{
+	int rv = is_valid_traversal(bps, x, n, i);
+	if(rv != 0) {
+		printf ("Caught what looks to be an invalid traversal!\n");
+		dump_node_info(bps,x);
+		printf("\nchild:\n");
+		dump_node_info(bps,n);
+	}
+}
+
 int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i)
 {
 	int rv, c;
@@ -2348,11 +2360,17 @@ int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i
 	}
 	if (n->leaf)
 	{
-		if (rv != 0) return -3;
+		if (x->active[c] && rv != 0) {
+			return -3;
+		}
+		else if (!x->active[c] && rv >= 0) 
+		{
+			return -4;
+		}
 	}
 	else
 	{
-		if (rv >= 0) return -4;
+		if (rv >= 0) return -5;
 	}
 
 	return 0;

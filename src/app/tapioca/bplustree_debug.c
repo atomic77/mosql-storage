@@ -29,13 +29,6 @@
 #include <stdio.h>
 
 
-//int bptree_sequential_read_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
-//		bptree_node *n, int binary);
-//int output_bptree_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
-//		bptree_node* n, int level, int binary);
-
-//int dump_bptree_contents(bptree_session *bps, tapioca_bptree_id tbpt_id, int dbug,
-//		int binary);
 int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 		int level, FILE *fp);
 
@@ -44,11 +37,11 @@ int verify_bptree_sequential(bptree_session *bps, uuid_t failed_node);
 bptree_key_val *
 	verify_bptree_recursive_read(bptree_session* bps, bptree_node* n, int dump_to_text, FILE* fp, int level, int* rv);
 
-//int verify_bptree_order_recursive(bptree_session *bps, tapioca_bptree_id *tbpt_id,
-//		bptree_node *n, char *largest);
-int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node);
+int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node,
+	FILE *fp);
 int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
-		bptree_key_val *prune_kv, uuid_t failed_node, int *nodes);
+		bptree_key_val *prune_kv, uuid_t failed_node, int *nodes, 
+		FILE *fp);
 int bptree_get_key_length(bptree_session *bps);
 
 
@@ -98,6 +91,14 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 			fflush(fp);
 			fclose(fp);
 			break;
+		case BPTREE_DEBUG_DUMP_NODE_DETAILS:
+			sprintf(s1, "/tmp/%d-nodedetails.out", bps->bpt_id);
+			fp = fopen(s1,"w");
+			rv = bptree_index_scan(bps, root, data, fp);
+			if(rv == BPTREE_OP_SUCCESS) bps->eof = 0;
+			fflush(fp);
+			fclose(fp);
+			break;
 		case BPTREE_DEBUG_VERIFY_RECURSIVELY:
 			kvmax = verify_bptree_recursive_read(bps,root,0, NULL,0, &rv);
 			if (rv == BPTREE_OP_SUCCESS) {
@@ -119,7 +120,7 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 			break;
 		case BPTREE_DEBUG_INDEX_RECURSIVE_SCAN:
 //			printf("Doing recursive scan of index\n");
-			rv = bptree_index_scan(bps, root, data);
+			rv = bptree_index_scan(bps, root, data, NULL);
 			if(rv == BPTREE_OP_SUCCESS) bps->eof = 0;
 			break;
 		default:
@@ -191,7 +192,7 @@ void bptree_key_value_to_string(bptree_session *bps, unsigned char *k,
 				strncpy(buf, s, chars);
 				break;
 			case BPTREE_FIELD_COMP_MEMCMP:
-				sprintf("%x",(char *)(k+offset));
+				chars = sprintf(buf, "%x",(char *)(k+offset));
 				break;
 			default:
 				break;
@@ -459,7 +460,8 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
  * The procedure can restart from the last node it failed to read from on
  * multi-node configurations
  */
-int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node)
+int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node,
+	FILE *fp)
 {
 	int rv;
 	int nodes =0;
@@ -484,7 +486,7 @@ int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node)
 		memset(kv.k,'\0',kv.ksize);
 		memset(kv.v,'\0',kv.vsize);
 	}
-	rv = bptree_index_scan_recursive(bps, root, &kv, failed_node, &nodes);
+	rv = bptree_index_scan_recursive(bps, root, &kv, failed_node, &nodes, fp);
 	if (rv == BPTREE_OP_SUCCESS)
 	{
 		printf ("Scanned %d nodes \n",nodes);
@@ -494,7 +496,8 @@ int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node)
 }
 // Scan only values larger than *prune_kv
 int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
-		bptree_key_val *prune_kv, uuid_t failed_node, int *nodes)
+		bptree_key_val *prune_kv, uuid_t failed_node, int *nodes,
+		FILE *fp)
 {
 	int c, rv;
 	bptree_key_val kv;
@@ -505,6 +508,12 @@ int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 		printf("BTree node not sorted correctly or invalid!\n");
 		return BPTREE_OP_TREE_ERROR;
 	}
+
+	if (fp != NULL) 
+	{
+		dump_node_info_fp(bps, n, fp);
+	}
+	
 	if (!n->leaf)
 	{
 		for (c = 0; c <= n->key_count; c++)
@@ -534,7 +543,7 @@ int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 
 				(*nodes)++;
 				rv= bptree_index_scan_recursive(bps,child,
-						prune_kv,failed_node,nodes);
+						prune_kv,failed_node,nodes,fp);
 
 				free_node(&child);
 
@@ -636,53 +645,58 @@ int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 
 void dump_node_info(bptree_session *bps, bptree_node *n)
 {
+	dump_node_info_fp(bps, n, stdout);
+}
+
+void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp)
+{
 	int i, rv;
 	char s1[512];
 	char uuid_out[40];
 	bptree_key_val kv;
 	if (n == NULL) {
-		printf ("\tB+tree node is null!\n");
+		fprintf (fp, "\tB+tree node is null!\n");
 		return;
 	}
 	if ( (rv = is_node_sane(n)) != 0)
-		printf("\tB+tree node failed sanity check rv %d!!\n", rv);
+		fprintf(fp, "\tB+tree node failed sanity check rv %d!!\n", rv);
 
-	printf("\tLeaf: %d\n", n->leaf);
+	fprintf(fp, "\tLeaf: %d\n", n->leaf);
 
 	uuid_unparse(n->self_key, uuid_out);
-	printf("\tSelf key: %s\n", uuid_out);
+	fprintf(fp, "\tSelf key: %s\n", uuid_out);
 	uuid_unparse(n->parent, uuid_out);
-	printf("\tParent key: %s\n", uuid_out);
+	fprintf(fp, "\tParent key: %s\n", uuid_out);
 	uuid_unparse(n->next_node, uuid_out);
-	printf("\tNext key: %s\n", uuid_out);
+	fprintf(fp, "\tNext key: %s\n", uuid_out);
 	uuid_unparse(n->prev_node, uuid_out);
-	printf("\tPrev key: %s\n", uuid_out);
+	fprintf(fp, "\tPrev key: %s\n", uuid_out);
 
 
-	printf("\tKey count: %d\n", n->key_count);
-	printf("\tKey/value sizes: ");
+	fprintf(fp, "\tKey count: %d\n", n->key_count);
+	fprintf(fp, "\tKey/value sizes: ");
 	for (i =0; i < n->key_count; i++)
-		printf ("(%d, %d), ", n->key_sizes[i], n->value_sizes[i]);
+		fprintf (fp, "(%d, %d), ", n->key_sizes[i], n->value_sizes[i]);
 
-	printf("\n\tKeys:\n\t\t");
+	fprintf(fp, "\n\tKeys:\n\t\t");
 	for (i =0; i < n->key_count; i++)
 	{
 		get_key_val_ref_from_node(n, i, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s1);
-		printf(" %s ", s1);
+		fprintf(fp, " %s ", s1);
 	}
 
 	if(!n->leaf)
 	{
-		printf("\n\tChild nodes:\n");
+		fprintf(fp, "\n\tChild nodes:\n");
 		for (i =0; i <= n->key_count; i++)
 		{
 			uuid_unparse(n->children[i], uuid_out);
-			printf("\t\t%d: %s \n", i, uuid_out);
+			fprintf(fp, "\t\t%d: %s \n", i, uuid_out);
 		}
 	}
 
-	printf("\n");
+	fprintf(fp, "\n");
 
-	fflush(stdout);
+	fflush(fp);
 }
