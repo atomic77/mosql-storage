@@ -16,25 +16,7 @@
 */
 
 #include "bptree_unittest.h"
-
-int *init_new_int_array(int sz) 
-{
-	int *arr;  
-	arr = (int *) malloc(sz * sizeof(int));
-	for (int i = 0; i < sz; i++) arr[i] = i;
-	return arr;
-}
-
-int sample_without_replacement(int *arr, int *n)
-{
-	int r,k;
-	r = rand() % (*n);
-	k = arr[r];
-	arr[r] = arr[*n-1];
-	(*n)--;
-	return k;
-}
-
+#include "test_helpers.h"
 
 class BptreeInterfaceTest : public BptreeTestBase {
 	

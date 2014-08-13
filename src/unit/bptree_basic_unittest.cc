@@ -25,9 +25,12 @@
  * is provided for ordering (similar to qsort())
  */
 #include "gtest.h"
+#include "test_helpers.h"
 extern "C" {
-#include "bplustree.h"
+	#include "bplustree.h"
 	#include <assert.h>
+	#include <gsl/gsl_rng.h>
+	#include <gsl/gsl_randist.h>	
 }
 
 class BptreeCoreTest : public testing::Test {
@@ -89,8 +92,6 @@ protected:
 		if (num_elem > BPTREE_NODE_SIZE) return NULL;
 		bptree_node *n = create_new_bptree_node(bps);
 
-			// TODO fill in some data
-
 		for (int i = 0; i < num_elem; i++) 
 		{
 			int k = i * 10;
@@ -124,11 +125,12 @@ protected:
 	 and were assigned with *v as the value*/
 	void verifyKvInNode(bptree_node *x, bptree_key_val *kv, int keys)
 	{
-		int rv,pos;
+		int rv,k_pos, c_pos;
 		int positions[20]; 
 		// Check exact matches
 		for (int i=0; i < keys; i++) {
-			positions[i] = find_position_in_node(bps, x, &kv[i], &rv);
+			rv = find_position_in_node(bps, x, &kv[i], &k_pos, &c_pos);
+			positions[i] = k_pos;
 			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 		}
 		
@@ -146,18 +148,18 @@ protected:
 		// checked
 		bps->insert_flags = BPTREE_INSERT_ALLOW_DUPES;
 		for (int i=0; i < keys; i++) {
-			pos = find_position_in_node(bps, x, &kv[i], &rv);
+			rv = find_position_in_node(bps, x, &kv[i], &k_pos, &c_pos);
 			EXPECT_EQ(rv, BPTREE_OP_KEY_NOT_FOUND);
-			EXPECT_EQ(pos, positions[i]);
+			EXPECT_EQ(k_pos, positions[i]);
 		}
 		
 		/*********************************************/
 		// Confirm that key-only checks still work
 		bps->insert_flags = BPTREE_INSERT_UNIQUE_KEY;
 		for (int i=0; i < keys; i++) {
-			pos = find_position_in_node(bps, x, &kv[i], &rv);
+			rv = find_position_in_node(bps, x, &kv[i], &k_pos, &c_pos);
 			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
-			EXPECT_EQ(pos, positions[i]);
+			EXPECT_EQ(k_pos, positions[i]);
 		}
 		
 	}
@@ -178,10 +180,19 @@ class BptreeIntBasedTreeTest : public BptreeCoreTest {
 protected:
 	int rv;
 	int k, v, ksize, vsize;
+	long unsigned int seed;
+	const gsl_rng_type *T;
+	gsl_rng *rng;
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
 		bps = mockBptreeSessionCreate();
 		createNewMockSession();
+		// Set up GSL random number generator
+		T = gsl_rng_ranlxs2;
+		rng = gsl_rng_alloc(T);
+		seed = 1234;
+		gsl_rng_set(rng, seed);
+	
 	}
 	
 	bptree_node * makeIncrementalBptreeNode(bptree_session *bps, 
@@ -492,8 +503,8 @@ TEST_F(BptreeCoreTest, FindPartialKeyInNode) {
 }
 
 
-TEST_F(BptreeCoreTest, FindMissingElement) {
-	int rv, pos, num_elem = 7;
+TEST_F(BptreeCoreTest, FindElementInNode) {
+	int rv, k_pos, c_pos, num_elem = 4;
 	if(BPTREE_NODE_SIZE < num_elem) {
 		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
 		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
@@ -526,23 +537,39 @@ TEST_F(BptreeCoreTest, FindMissingElement) {
 	copy_key_val_to_node(n, &kv, 3);
 	EXPECT_EQ(k, *(int *)n->keys[3]);
 	
+	dump_node_info(bps, n);
 	rv = is_node_ordered(bps, n);
 	EXPECT_EQ(rv, 0);
 	
 	k = 7; 
-	pos = find_position_in_node(bps, n, &kv, &rv);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
 	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
-	EXPECT_EQ(2, pos);
+	EXPECT_EQ(2, k_pos);
+	EXPECT_EQ(2, c_pos);
 	
 	k = -1;
-	pos = find_position_in_node(bps, n, &kv, &rv);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
 	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
-	EXPECT_EQ(0, pos);
+	EXPECT_EQ(0, k_pos);
+	EXPECT_EQ(0, c_pos);
+	
+	k = 1;
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(0, k_pos);
+	EXPECT_EQ(1, c_pos);
+	
+	k = 15; 
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(3, k_pos);
+	EXPECT_EQ(4, c_pos);
 	
 	k = 16; 
-	pos = find_position_in_node(bps, n, &kv, &rv);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
 	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
-	EXPECT_EQ(4, pos);
+	EXPECT_EQ(4, k_pos);
+	EXPECT_EQ(4, c_pos);
 	
 }
 TEST_F(BptreeCoreTest, ReadNodeMock) {
@@ -598,6 +625,49 @@ TEST_F(BptreeIntBasedTreeTest, DeleteElement) {
 	
 	// Final node sanity checking
 	EXPECT_TRUE(is_node_ordered(bps, n) == 0);
+	
+}
+
+TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeRandomized) {
+	int *arr;
+	int r, iterations= 10;
+	int n = BPTREE_NODE_SIZE * (3);
+	
+	for (int iter = 0; iter < iterations; iter++) {
+		arr = init_new_int_array(n);
+		gsl_ran_shuffle(rng, arr, n, sizeof(int));
+		for(int i= 0; i < n; i++) {
+			r = arr[i];
+			k = r*100;
+			v = r*10000;
+			rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+		//uuid_clear(nn);
+		//bptree_debug(bps, BPTREE_DEBUG_DUMP_NODE_DETAILS, nn);
+		uuid_clear(nn);
+		rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		
+		free(arr);
+		arr = init_new_int_array(n);
+		gsl_ran_shuffle(rng, arr, n, sizeof(int));
+		
+		for(int i= 0; i < n; i++) {
+			r = arr[i];
+			k = r*100;
+			v = r*10000;
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+			
+			uuid_clear(nn);
+			rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+		rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_EOF);
+		free(arr);
+	}
 	
 }
 
@@ -690,7 +760,6 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesReverse) {
 }
 
 TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
-	// Inserting more than nodesize ensures that at least one split happens
 	int n = BPTREE_NODE_SIZE / 2;
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
@@ -708,7 +777,6 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromTrivialTree) {
 	EXPECT_EQ(rv, BPTREE_OP_EOF);
 }
 
-// STUBS: Add similar test cases for concat and split
 TEST_F(BptreeIntBasedTreeTest, ConcatUnderflowLeaf) {
 	
 	bptree_node *cl, *cr, *p;
@@ -958,22 +1026,52 @@ TEST_F(BptreeIntBasedTreeTest, RedistUnderflowLeaf) {
 	miniTreeSanityChecks(p,cl,cr);
 }
 	
+TEST_F(BptreeIntBasedTreeTest, InsertToFull) {
+	// Inserting more than nodesize ensures that at least one split happens
+	int n = BPTREE_NODE_SIZE;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	printf("\n");
+	
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		EXPECT_EQ(vsize, sizeof(v));
+		EXPECT_EQ(v, r*10000);
+	}
+}
+
 TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 	// Inserting more than nodesize ensures that at least one split happens
 	int n = 5 * BPTREE_NODE_SIZE;
-	for(int i= 1; i <= n; i++) {
-		k = i*100;
-		v = i*10000;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
 		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
 		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 	}
 	
-	for(int i= 1; i <= n; i++) {
-		k = i*100;
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
 		rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
 		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
 		EXPECT_EQ(vsize, sizeof(v));
-		EXPECT_EQ(v, i*10000);
+		EXPECT_EQ(v, r*10000);
 	}
 }
 

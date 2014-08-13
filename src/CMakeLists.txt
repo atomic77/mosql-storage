@@ -8,6 +8,7 @@ find_package(LIBEVENT REQUIRED)
 find_package(LIBPAXOS REQUIRED)
 find_package(LIBUUID REQUIRED)
 find_package(MSGPACK REQUIRED)
+find_package(GSL REQUIRED)
 
 # System libraries
 set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} pthread )

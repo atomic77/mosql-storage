@@ -256,8 +256,11 @@ void move_bptree_node_element(bptree_node *s, bptree_node *d,
 		int s_pos, int d_pos);
 
 void delete_key_from_node(bptree_node *x, int pos);
+/*@ For *kv, returns whether it was found; k_pos is where it is/would be
+ * in the node, and c_pos is what child position we would find the key
+ * in a further traversal*/
 int find_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv, int *pos);
+		bptree_key_val *kv, int *k_pos, int *c_pos);
 
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 

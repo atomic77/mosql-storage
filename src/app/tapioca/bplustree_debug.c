@@ -62,7 +62,6 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 	if (root->leaf && root->key_count == 0)
 	{
 		// Btree is empty
-		printf("Empty tree\n");
 		return BPTREE_OP_SUCCESS;
 	}
 
@@ -102,8 +101,6 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 		case BPTREE_DEBUG_VERIFY_RECURSIVELY:
 			kvmax = verify_bptree_recursive_read(bps,root,0, NULL,0, &rv);
 			if (rv == BPTREE_OP_SUCCESS) {
-				bptree_key_value_to_string_kv(bps, kvmax, s1);
-				printf("Largest key found: %s \n",s1);
 				fflush(stdout);
 				bps->eof = 0;
 			} else if(rv == 0) {
@@ -119,7 +116,6 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 			if(rv == BPTREE_OP_SUCCESS) fflush(stdout);
 			break;
 		case BPTREE_DEBUG_INDEX_RECURSIVE_SCAN:
-//			printf("Doing recursive scan of index\n");
 			rv = bptree_index_scan(bps, root, data, NULL);
 			if(rv == BPTREE_OP_SUCCESS) bps->eof = 0;
 			break;
@@ -489,7 +485,6 @@ int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node,
 	rv = bptree_index_scan_recursive(bps, root, &kv, failed_node, &nodes, fp);
 	if (rv == BPTREE_OP_SUCCESS)
 	{
-		printf ("Scanned %d nodes \n",nodes);
 		fflush(stdout);
 	}
 	return rv;

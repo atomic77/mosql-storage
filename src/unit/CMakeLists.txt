@@ -8,6 +8,7 @@ include_directories(${LIBEVENT_INCLUDE_DIRS})
 include_directories(${LIBPAXOS_INCLUDE_DIRS})
 include_directories(${LIBUUID_INCLUDE_DIRS})
 include_directories(${MSGPACK_INCLUDE_DIRS})
+include_directories(${GSL_INCLUDE_DIRS})
 
 SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
 add_executable(mosql_gtest_main gtest_main.cc test_helpers.cc storage_unittest.cc 
@@ -18,6 +19,6 @@ add_executable(mosql_gtest_main gtest_main.cc test_helpers.cc storage_unittest.c
 
 add_library(gtest STATIC gtest-all.cc)
 
-target_link_libraries(mosql_gtest_main gtest bplustree tapioca tapiocadb ${TAPIOCA_LINKER_LIBS} ${PAXOS_LINKER_LIBS} ${LIBUUID_LIBRARIES} ${MSGPACK_LIBRARIES}) 
+target_link_libraries(mosql_gtest_main gtest bplustree tapioca tapiocadb ${TAPIOCA_LINKER_LIBS} ${PAXOS_LINKER_LIBS} ${LIBUUID_LIBRARIES} ${MSGPACK_LIBRARIES} ${GSL_LIBRARIES} ) 
 
 INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/mosql_gtest_main DESTINATION mosql-test)
