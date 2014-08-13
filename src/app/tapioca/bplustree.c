@@ -732,8 +732,6 @@ inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) {
 // individual compar functions
 // TODO In order for non-unique secondary keys to work, we have to also compare
 // the values; this is a bit clunky now and probably should be rethought a bit
-// FIXME There is a problem here; we need to STOP going through the fields
-// if the key we are comparing against is only a partial key!
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields)
@@ -765,27 +763,20 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 static int bptree_update_recursive(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv)
 {
-	int k_pos, c_pos, rv ;
+	int k_pos, c_pos, rv, rv_f ;
 
 #ifdef DEFENSIVE_MODE
 	assert(is_node_ordered(bps,x) == 0);
 #endif
 
-	rv = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
+	rv_f = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
 	if (x->leaf)
 	{
-		if (rv == BPTREE_OP_KEY_NOT_FOUND)
-		{
-			// Key was not found where it should have been; do nothing
-			return rv;
-		}
+		if (rv_f == BPTREE_OP_KEY_NOT_FOUND) return rv_f;
 		
-		// FIXME Refactor this!!
-		unsigned char *newval = realloc(x->values[k_pos],kv->vsize);
-		assert(newval != NULL); // just in case we can't reallocate...
-		x->values[k_pos] = newval;
-		memcpy(x->values[k_pos], kv->v, kv->vsize);
-		x->value_sizes[k_pos] = kv->vsize;
+		clear_key_position(x,k_pos);
+		x->key_count--;
+		copy_key_val_to_node(x, kv, k_pos);
 		return write_node(bps, x);
 	}
 	else
@@ -794,14 +785,12 @@ static int bptree_update_recursive(bptree_session *bps,
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
 		traversal_check(bps, x, n, c_pos);
 
-		// FIXME Refactor * 3
-		if (rv == BPTREE_OP_KEY_FOUND)
+		if (rv_f == BPTREE_OP_KEY_FOUND)
 		{
-			unsigned char *newval = realloc(x->values[k_pos],kv->vsize);
-			assert(newval != NULL); // just in case we can't reallocate...
-			x->values[k_pos] = newval;
-			memcpy(x->values[k_pos], kv->v, kv->vsize);
-			x->value_sizes[k_pos] = kv->vsize;
+			
+			clear_key_position(x,k_pos);
+			x->key_count--;
+			copy_key_val_to_node(x, kv, k_pos);
 			rv = write_node(bps, x);
 			if (rv != BPTREE_OP_SUCCESS) return rv;
 		}

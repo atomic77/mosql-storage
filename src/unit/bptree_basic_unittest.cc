@@ -71,7 +71,6 @@ protected:
 			}
 			
 		}
-		//printf("\n");
 		assert(is_node_ordered(bps, n) == 0);
 		
 		return n;
@@ -180,7 +179,7 @@ class BptreeIntBasedTreeTest : public BptreeCoreTest {
 protected:
 	int rv;
 	int k, v, ksize, vsize;
-	long unsigned int seed;
+	long unsigned int *seed;
 	const gsl_rng_type *T;
 	gsl_rng *rng;
 	virtual void SetUp() {
@@ -190,8 +189,12 @@ protected:
 		// Set up GSL random number generator
 		T = gsl_rng_ranlxs2;
 		rng = gsl_rng_alloc(T);
-		seed = 1234;
-		gsl_rng_set(rng, seed);
+		// An ugly but easy way to get a decently random seed
+		uuid_t uu_tmp;
+		uuid_generate(uu_tmp);
+		seed = (long unsigned int *)uu_tmp;
+		//seed = 1234;
+		gsl_rng_set(rng, *seed);
 	
 	}
 	
@@ -1073,6 +1076,44 @@ TEST_F(BptreeIntBasedTreeTest, MoreThanOneNodeInsert) {
 		EXPECT_EQ(vsize, sizeof(v));
 		EXPECT_EQ(v, r*10000);
 	}
+}
+
+TEST_F(BptreeIntBasedTreeTest, InsertUpdateSearch) {
+	int n = 5 * BPTREE_NODE_SIZE;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*30000;
+		rv = bptree_update(bps, &k, sizeof(k), &v, sizeof(v)); 
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		EXPECT_EQ(vsize, sizeof(v));
+		EXPECT_EQ(v, r*30000);
+	}
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 }
 
 TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
