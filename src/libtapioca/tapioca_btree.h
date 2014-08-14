@@ -36,6 +36,7 @@
 #define BPTREE_OP_KEY_FOUND 8
 #define BPTREE_OP_EOF 16
 #define BPTREE_OP_KEY_DELETED 32
+#define BPTREE_OP_CURSOR_NOT_SET 64
 // Catch-all for 'good' things we haven't bothered to define yet
 #define BPTREE_OP_SUCCESS 1
 

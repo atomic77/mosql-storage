@@ -737,6 +737,7 @@ static void handle_bptree_initialize_bpt_session_no_commit(tcp_client* c,
 	int rv;
 	client_bpt_id *c_b = malloc(sizeof(client_bpt_id));
 	bptree_session *bps = malloc(sizeof(bptree_session));
+	memset(bps, 0,sizeof(bptree_session));
 	uint16_t bpt_id;
 	enum bptree_open_flags open_flags;
 	enum bptree_insert_flags insert_flags;

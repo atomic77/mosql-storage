@@ -314,17 +314,19 @@ protected:
 	
 	
 	void createNewMockSession() {
-		createNewMockSession(1000, 
-				     BPTREE_OPEN_OVERWRITE, 
-				     BPTREE_INSERT_UNIQUE_KEY);
+		createNewMockSession(1000, BPTREE_OPEN_OVERWRITE, 
+				     BPTREE_INSERT_UNIQUE_KEY, 1);
 	}
 	void createNewMockSession(tapioca_bptree_id bpt_id, 
-				  bptree_open_flags o_f, bptree_insert_flags i_f)
+				  bptree_open_flags o_f, bptree_insert_flags i_f,
+				  int n_fld)
 	{
 		bptree_initialize_bpt_session(bps, bpt_id, o_f, i_f);
-		bptree_set_num_fields(bps, 1);
-		bptree_set_field_info(bps, 0, sizeof(int32_t), 
-				      BPTREE_FIELD_COMP_INT_32, int32cmp);
+		bptree_set_num_fields(bps, n_fld);
+		for (int f = 0; f < n_fld; f++) {
+			bptree_set_field_info(bps, f, sizeof(int32_t), 
+					BPTREE_FIELD_COMP_INT_32, int32cmp);
+		}
 		
 	}
 	
@@ -575,6 +577,113 @@ TEST_F(BptreeCoreTest, FindElementInNode) {
 	EXPECT_EQ(4, c_pos);
 	
 }
+// Helper to clean up the find partial element test case
+inline void write_pair_to_buf(unsigned char *dbuf, int i1, int i2){
+	memcpy(dbuf, &i1, sizeof(int));
+	memcpy(dbuf+sizeof(int), &i2, sizeof(int));
+}
+TEST_F(BptreeCoreTest, FindPartialElementInNode) {
+	int rv, k_pos, c_pos, num_elem = 5;
+	if(BPTREE_NODE_SIZE < num_elem) {
+		printf("Cannot run test with BPTREE_NODE_SIZE %d, deg %d\n",
+		       BPTREE_NODE_SIZE, BPTREE_MIN_DEGREE);
+		return;
+	}
+	rv = bptree_initialize_bpt_session(bps, 1000, BPTREE_OPEN_OVERWRITE,
+		BPTREE_INSERT_UNIQUE_KEY );
+	bptree_set_num_fields(bps, 2);
+	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
+		int32cmp);
+
+	bptree_node *n = create_new_empty_bptree_node();
+	bptree_key_val kv;
+	int k1, k2, v;
+	unsigned char kbuf[sizeof(int)*2];
+	kv.k = kbuf;
+	kv.ksize = sizeof(int)*2;
+	kv.v = (unsigned char *)&v;
+	kv.vsize = sizeof(int);
+	v = 1000;
+	
+	write_pair_to_buf(kbuf, 100, 1);
+	copy_key_val_to_node(n, &kv, 0);
+	
+	write_pair_to_buf(kbuf, 100, 2);
+	copy_key_val_to_node(n, &kv, 1);
+	
+	write_pair_to_buf(kbuf, 200, 1);
+	copy_key_val_to_node(n, &kv, 2);
+	
+	write_pair_to_buf(kbuf, 200, 2);
+	copy_key_val_to_node(n, &kv, 3);
+	
+	write_pair_to_buf(kbuf, 300, 1);
+	copy_key_val_to_node(n, &kv, 4);
+	
+	dump_node_info(bps, n);
+	rv = is_node_ordered(bps, n);
+	EXPECT_EQ(rv, 0);
+	
+	// Partial matches should favour the left side
+	kv.k = (unsigned char *)&k1;
+	kv.ksize = sizeof(int);
+	k1 = 100; 
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(0, k_pos);
+	EXPECT_EQ(0, c_pos);
+	
+	k1 = 150;
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(2, k_pos);
+	EXPECT_EQ(2, c_pos);
+	
+	k1 = 200;
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(2, k_pos);
+	EXPECT_EQ(2, c_pos);
+	
+	k1 = 400;
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(5, k_pos);
+	EXPECT_EQ(5, c_pos);
+	
+	// Test two-field exact matches
+	kv.k = (unsigned char *)kbuf;
+	kv.ksize = sizeof(int)*2;
+	write_pair_to_buf(kbuf, 100,1);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(0, k_pos);
+	EXPECT_EQ(1, c_pos);
+	
+	write_pair_to_buf(kbuf, 150,2);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(2, k_pos);
+	EXPECT_EQ(2, c_pos);
+	
+	write_pair_to_buf(kbuf, 200,2);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_FOUND , rv);
+	EXPECT_EQ(3, k_pos);
+	EXPECT_EQ(4, c_pos);
+	
+	write_pair_to_buf(kbuf, 400,1);
+	rv = find_position_in_node(bps, n, &kv, &k_pos, &c_pos);
+	EXPECT_EQ(BPTREE_OP_KEY_NOT_FOUND , rv);
+	EXPECT_EQ(5, k_pos);
+	EXPECT_EQ(5, c_pos);
+	
+	
+	
+	
+}
 TEST_F(BptreeCoreTest, ReadNodeMock) {
 	int rv, num_elem = 5;
 	
@@ -700,7 +809,7 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesForward) {
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
-			     BPTREE_INSERT_ALLOW_DUPES);
+			     BPTREE_INSERT_ALLOW_DUPES, 1);
 	
 	int n = BPTREE_NODE_SIZE * 3;
 	for(int i= 1; i <= n; i++) {
@@ -733,7 +842,7 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesReverse) {
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
-			     BPTREE_INSERT_ALLOW_DUPES);
+			     BPTREE_INSERT_ALLOW_DUPES, 1);
 	
 	int n = BPTREE_NODE_SIZE * 5;
 	for(int i= 1; i <= n; i++) {
@@ -1129,3 +1238,137 @@ TEST_F(BptreeIntBasedTreeTest, InsertDupe) {
 	EXPECT_EQ(v, 1234);
 	EXPECT_EQ(vsize, sizeof(v));
 }
+
+TEST_F(BptreeIntBasedTreeTest, CursorEmptyTable) {
+	rv = bptree_search(bps, &k, sizeof(k), &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_KEY_NOT_FOUND);
+	EXPECT_EQ(vsize, 0);
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	EXPECT_EQ(ksize, 0);
+	EXPECT_EQ(vsize, 0);
+	rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	EXPECT_EQ(ksize, 0);
+	EXPECT_EQ(vsize, 0);
+}
+
+TEST_F(BptreeIntBasedTreeTest, CursorSingleRowTable) {
+	k = 1000;
+	v = 1234;
+	
+	rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	EXPECT_EQ(ksize, sizeof(k));
+	EXPECT_EQ(vsize, sizeof(v));
+	
+	rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	EXPECT_EQ(ksize, 0);
+	EXPECT_EQ(vsize, 0);
+}
+
+TEST_F(BptreeIntBasedTreeTest, CursorUnset) {
+	k = 1000;
+	v = 1234;
+	
+	rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	k++;
+	rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_CURSOR_NOT_SET);
+	EXPECT_EQ(ksize, 0);
+	EXPECT_EQ(vsize, 0);
+}
+
+TEST_F(BptreeIntBasedTreeTest, CursorFullTraversal) {
+	int n = 5 * BPTREE_NODE_SIZE;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	int cnt = 1;
+	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	EXPECT_EQ(k, 0);
+	EXPECT_EQ(v, 0);
+	EXPECT_EQ(ksize, sizeof(k));
+	EXPECT_EQ(vsize, sizeof(v));
+	
+	for (int i=1;i < n; i++) {
+		rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+		EXPECT_EQ(k, i*100);
+		EXPECT_EQ(v, i*10000);
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	}
+	
+	rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+	EXPECT_EQ(ksize, 0);
+	EXPECT_EQ(vsize, 0);
+	EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
+}	
+
+TEST_F(BptreeIntBasedTreeTest, CursorPartialKey) {
+	int n = 3 * BPTREE_NODE_SIZE;
+	int n_2 = 3; // number of second-level keys
+	unsigned char kbuf[sizeof(int)*2];
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_UNIQUE_KEY, 2);
+	
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		for (int j = 0; j < n_2; j++) {
+			memcpy(kbuf, &k, sizeof(int));
+			memcpy(kbuf+sizeof(int), &j, sizeof(int));
+			rv = bptree_insert(bps, kbuf, sizeof(int)*2, &v, sizeof(v));
+			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		}
+	}
+	uuid_clear(nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_NODE_DETAILS, nn);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		rv = bptree_search(bps, &k, sizeof(k), &v, &vsize); 
+//		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	//	EXPECT_EQ(vsize, sizeof(v));
+		//EXPECT_EQ(v, r*10000);
+		
+		for (int j = 0; j < n_2; j++) {
+			rv = bptree_index_next(bps, kbuf, &ksize, &v, &vsize);
+			EXPECT_EQ(ksize, sizeof(k)*2);
+			EXPECT_EQ(vsize, sizeof(v));
+			EXPECT_EQ(*(int *)kbuf, r*100);
+			EXPECT_EQ(*(int *)(kbuf+sizeof(int)), j);
+			EXPECT_EQ(v, r*10000);
+			EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+		}
+	}
+	
+	rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+	//EXPECT_EQ(ksize, 0);
+	//EXPECT_EQ(vsize, 0);
+	//EXPECT_EQ(rv, BPTREE_OP_EOF);
+	
+}	

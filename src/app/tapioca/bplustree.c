@@ -167,12 +167,22 @@ int bptree_initialize_bpt_session(bptree_session *bps,
 	return BPTREE_OP_SUCCESS;
 }
 
+void clear_cursor(bptree_session *bps)
+{
+	if(bps->cursor_node != NULL)
+	{
+		free_node(&(bps->cursor_node));
+	}
+	bps->cursor_pos = 0;
+	bps->eof = 0;
+	
+}
+
 int bptree_set_active_bpt_id(bptree_session *bps, tapioca_bptree_id bpt_id)
 {
 	bps->bpt_id = bpt_id;
 	bps->eof = 0;
 	bps->cursor_pos = 0;
-//	uuid_clear(bps->cursor_cell_id);
 	bps->cursor_node = NULL;
 	return BPTREE_OP_SUCCESS;
 }
@@ -814,6 +824,10 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 		|| vsize <= 0 || vsize >= 65000) return BPTREE_OP_INVALID_INPUT;
 	
 	rv = bptree_search(bps, k, ksize, _val, &_vsize);
+	
+	// Search will set a cursor position, but we need to clear this since
+	// it could lead to index_next being successfully called when it shouldn't
+	clear_cursor(bps);
 
 	kv.k = k;
 	kv.v = v;
@@ -1112,6 +1126,57 @@ void move_bptree_node_element(bptree_node *s, bptree_node *d,
 int find_position_in_node(bptree_session *bps, bptree_node *x,
 		bptree_key_val *kv, int *k_pos, int *c_pos)
 {
+	if (num_fields_used(bps, kv) == bps->num_fields)
+	{
+		return find_position_in_node_exact(bps, x, kv, k_pos, c_pos);
+	}
+	else
+	{
+		return find_position_in_node_partial(bps, x, kv, k_pos, c_pos);
+	}
+}
+int find_position_in_node_partial(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *k_pos, int *c_pos)
+{
+	int i, cmp, prev, rv = BPTREE_OP_KEY_NOT_FOUND;
+	if (x->key_count <= 0) 
+	{
+		*k_pos = 0;
+		*c_pos = 0;
+		return BPTREE_OP_KEY_NOT_FOUND;
+	}
+
+	cmp = prev = 1;
+	for(i = x->key_count-1; i >= 0; i--)
+	{
+		cmp = bptree_compar_to_node(bps,x,kv,i);
+		if (cmp < 0) break;
+		prev = cmp;
+	}
+	i++;
+	
+	*k_pos = i;
+	
+	if (prev == 0) 
+	{
+		rv = BPTREE_OP_KEY_FOUND;
+		//*c_pos = *k_pos + 1;
+		*c_pos = *k_pos ;
+	}
+	else
+	{
+		rv = BPTREE_OP_KEY_NOT_FOUND;
+		*c_pos = *k_pos;
+	}	
+	
+	// Border case -- if kv is greater than the largest key, and ndoe is
+	// full
+	return rv;
+}
+
+int find_position_in_node_exact(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *k_pos, int *c_pos)
+{
 	int i, cmp, rv = BPTREE_OP_KEY_NOT_FOUND;
 	if (x->key_count <= 0) 
 	{
@@ -1269,8 +1334,7 @@ int bptree_index_next(bptree_session *bps, void *k,
 		bps->cursor_pos = 0;
 		*ksize = 0;
 		*vsize = 0;
-		//TODO This should probably be an error condition
-		return BPTREE_OP_EOF;
+		return BPTREE_OP_CURSOR_NOT_SET;
 	}
 
 	rv = bptree_index_next_internal(bps, k, ksize,v, vsize);
