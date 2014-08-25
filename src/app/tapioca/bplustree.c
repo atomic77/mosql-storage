@@ -61,6 +61,7 @@ int bptree_index_next_internal(bptree_session *bps, void *k,
 bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
 		size_t *nsize);
 inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) ;
+inline int node_is_same(bptree_node *x, bptree_node *y);
 void clear_key_position(bptree_node *x, int i);
 
 
@@ -359,7 +360,17 @@ bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 	{
 		if (rv_f == BPTREE_OP_KEY_FOUND)
 		{
+			/* Check if we need to invalidate the cached node 
+			 * a cursor might be on */
+			if(node_is_same(x, bps->cursor_node)
+				&& bps->cursor_pos >= k_pos)
+			{
+				bps->cursor_pos--;
+				bps->cached_key_dirty = 1;
+			}
+			
 			delete_key_from_node(x,k_pos);
+			
 			if (write_node(bps, x) != BPTREE_OP_SUCCESS) 
 				return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 		}
@@ -737,6 +748,12 @@ inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) {
 	
 }
 
+inline int node_is_same(bptree_node *x, bptree_node *y)
+{
+	if (x == NULL || y == NULL) return 0;
+	return (uuid_compare(x->self_key, y->self_key) == 0);
+}
+
 // A generalization of the old compar function we used, but incorporating the
 // information we have provided about what fields are present and their
 // individual compar functions
@@ -787,6 +804,13 @@ static int bptree_update_recursive(bptree_session *bps,
 		clear_key_position(x,k_pos);
 		x->key_count--;
 		copy_key_val_to_node(x, kv, k_pos);
+		
+		if(node_is_same(x, bps->cursor_node) && 
+			bps->cursor_pos >= k_pos)
+		{
+			bps->cached_key_dirty = 1;
+		}
+			
 		return write_node(bps, x);
 	}
 	else
@@ -1250,6 +1274,11 @@ static int bptree_insert_nonfull(bptree_session *bps,
 			return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 		}
 
+		if(node_is_same(x, bps->cursor_node))
+		{
+			bps->cached_key_dirty = 1;
+		}
+		
 		shift_bptree_node_elements_right(x,k_pos);
 		copy_key_val_to_node(x, kv, k_pos);
 
@@ -1281,6 +1310,13 @@ static int bptree_insert_nonfull(bptree_session *bps,
 	}
 }
 
+int cache_node_in_session(bptree_session *bps, bptree_node *c)
+{
+	if (bps->cursor_node != NULL) free_node(&(bps->cursor_node));
+	bps->cursor_node = copy_node(c);
+	bps->cached_key_dirty = 0;
+	bps->eof = 0;
+}
 static int bptree_search_recursive(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv)
 {
@@ -1293,10 +1329,9 @@ static int bptree_search_recursive(bptree_session *bps,
 	rv = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
 	if (x->leaf)
 	{
-		if (bps->cursor_node != NULL) free_node(&(bps->cursor_node));
-		bps->cursor_node = copy_node(x);
+		
+		cache_node_in_session(bps, x);
 		bps->cursor_pos = k_pos;
-		bps->eof = 0;
 		
 		if(rv == BPTREE_OP_KEY_FOUND && x->active[k_pos])
 		{
@@ -1335,6 +1370,12 @@ int bptree_index_next(bptree_session *bps, void *k,
 		*ksize = 0;
 		*vsize = 0;
 		return BPTREE_OP_CURSOR_NOT_SET;
+	}
+	if (bps->cached_key_dirty)
+	{
+		bptree_node *c = read_node(bps, bps->cursor_node->self_key, &rv);
+		if (rv != BPTREE_OP_NODE_FOUND) return rv;
+		cache_node_in_session(bps, c);
 	}
 
 	rv = bptree_index_next_internal(bps, k, ksize,v, vsize);

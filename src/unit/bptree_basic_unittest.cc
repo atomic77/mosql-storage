@@ -24,8 +24,15 @@
  * Arbitrary binary data can be indexed provided that a pointer to a function
  * is provided for ordering (similar to qsort())
  */
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <set>
 #include "gtest.h"
 #include "test_helpers.h"
+
+using namespace std;
+
 extern "C" {
 	#include "bplustree.h"
 	#include <assert.h>
@@ -782,7 +789,6 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeRandomized) {
 	}
 	
 }
-
 TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTree) {
 	int n = BPTREE_NODE_SIZE * 5;
 	for(int i= 1; i <= n; i++) {
@@ -802,6 +808,91 @@ TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTree) {
 	
 	rv = bptree_index_first(bps, &k, &ksize, &v, &vsize); 
 	EXPECT_EQ(rv, BPTREE_OP_EOF);
+}
+
+/*@ A test case to mimic the situation when we do a delete in MySQL based on
+ * a full-table scan */
+TEST_F(BptreeIntBasedTreeTest, DeleteOnConditionAndScan) {
+	vector<int> deleted(0), selected(0), inserted(0), post_del_select(0); 
+	int n = BPTREE_NODE_SIZE * 3;
+	int rv;
+	for(int i= 1; i <= n; i++) {
+		k = i;
+		v = i*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		inserted.push_back(k);
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	printf("\n");
+	
+	int k2, v2, k2_sz, v2_sz;
+	rv = bptree_index_first(bps, &k2, &k2_sz, &v2, &v2_sz);
+	selected.push_back(k2);
+	
+	uuid_clear(nn);
+	bptree_debug(bps, BPTREE_DEBUG_DUMP_NODE_DETAILS, nn);
+	
+	for (int i : inserted) 
+	{
+		k = i;
+		v = i*10000;
+		// Delete three quarters of the keys
+		if (i > 9) {
+			deleted.push_back(k);
+			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+		}
+		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
+		selected.push_back(k2);
+		if (rv == BPTREE_OP_EOF) break;
+		i++;
+	} 
+	
+	rv = bptree_index_first(bps, &k2, &k2_sz, &v2, &v2_sz);
+	post_del_select.push_back(k2);
+	while(rv != BPTREE_OP_EOF)
+	{
+		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
+		post_del_select.push_back(k2);
+	}
+	
+	printf("Inserted: ");
+	for (int i : inserted ) 
+	{
+		printf("%d ", i);
+	}
+	printf("\nSelected: ");
+	for (int s : selected ) 
+	{
+		printf("%d ", s);
+	}
+	printf("\nDeleted: ");
+	for (int d : deleted ) 
+	{
+		printf("%d ", d);
+	}
+	printf("\nPost-del select: ");
+	for (int s : post_del_select ) 
+	{
+		printf("%d ", s);
+	}
+	printf("\n");
+	
+	EXPECT_EQ(inserted.size(), n);
+	EXPECT_EQ(selected.size(), n);
+	EXPECT_EQ(deleted.size() + post_del_select.size(), n);
+	
+	std::sort(deleted.begin(), deleted.end());
+	std::sort(post_del_select.begin(), post_del_select.end());
+	
+	set<int> elem;
+	
+	set_intersection(deleted.begin(), deleted.end(),
+			 post_del_select.begin(), post_del_select.end(),
+			 inserter(elem, elem.end()));
+	
+	EXPECT_EQ(elem.size(), 0);
+	
+	
 }
 
 TEST_F(BptreeIntBasedTreeTest, DeleteFromNonTrivialTreeWithDupesForward) {

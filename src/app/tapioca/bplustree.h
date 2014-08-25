@@ -130,7 +130,6 @@ typedef struct bptree_session {
 	// Moved from bptree_handle
 	uint32_t execution_id;
 	transaction *t;
-	uuid_t cached_key;
 	uint16_t cached_key_dirty;
 	bptree_node *cursor_node;
 	int tapioca_client_id;

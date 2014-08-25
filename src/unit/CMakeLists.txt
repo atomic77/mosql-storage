@@ -10,7 +10,7 @@ include_directories(${LIBUUID_INCLUDE_DIRS})
 include_directories(${MSGPACK_INCLUDE_DIRS})
 include_directories(${GSL_INCLUDE_DIRS})
 
-SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
+SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive -std=c++0x")
 add_executable(mosql_gtest_main gtest_main.cc test_helpers.cc storage_unittest.cc 
 	vset_unittest.cc transaction_unittest.cc tapioca_unittest.cc remote_mock.c 
 	dump_unittest.cc contention_unittest.cc 
