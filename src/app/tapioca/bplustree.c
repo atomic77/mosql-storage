@@ -80,6 +80,8 @@ void bptree_split_child_nonleaf(bptree_session *bps, bptree_node* p, int i,
 		       bptree_node* cl, bptree_node *cr);
 
 void traversal_check(bptree_session *bps, bptree_node *x, bptree_node *n,int i);
+void reposition_cursor_before_redistrib(bptree_session *bps, bptree_node *cl, 
+					bptree_node *cr);
 
 /* There is no longer any good reason to have commit done inside of
 * these methods; the client is unlikely to want to have a committed  bpt 
@@ -431,14 +433,24 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 	int sp_i = (i < i_adj) ? i : i_adj;
 	if (c->key_count + adj->key_count < BPTREE_NODE_SIZE)
 	{
+		// Reposition cursor if we clear the node it was on
+		if(node_is_same(cr, bps->cursor_node)) 
+		{
+			cache_node_in_session(bps, cl);
+			bps->cached_key_dirty = 1;
+			bps->cursor_pos = cl->key_count + bps->cursor_pos; 
+		}
 		// Concatenate (i.e. remove one) nodes
 		concatenate_nodes(p, cl, cr, sp_i);
+		
 	} 
 	else 
 	{
+		reposition_cursor_before_redistrib(bps, cl, cr);
 		// Redistribute keys among nodes
 		redistribute_keys(p, cl, cr, sp_i);
 	}
+	
 	// cl is about to become the new root, clear parent before writing back
 	if (p->key_count == 0) {
 		uuid_clear(cl->parent);
@@ -481,6 +493,55 @@ void redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i)
 			redistribute_keys_lr_nonleaf(p,cl,cr,i);
 		}
 	}
+}
+
+/* When we redistribute keys, we need to ensure that the cursor has been 
+ * repositioned to avoid holes or duplicate reads to the client */
+void reposition_cursor_before_redistrib(bptree_session *bps, bptree_node *cl, 
+					bptree_node *cr)
+{
+	int l, r;
+	assert(cl->leaf == cr->leaf);
+	if (!cl->leaf) return;
+
+	// Two cases to handle:
+	// Case 1: cursor is on the right node and we are about to move keys L
+	if(cl->key_count < cr->key_count &&
+		node_is_same(cr, bps->cursor_node))
+	{
+		l = (int)ceil((cl->key_count + cr->key_count) / 2);
+		r = (int)floor((cl->key_count + cr->key_count) / 2);
+		int to_move = cr->key_count - r;
+		bps->cursor_pos -= to_move;
+		
+		if (bps->cursor_pos < 0)
+		{
+			// We've moved the position to the other node
+			bps->cursor_pos = bps->cursor_pos + l;
+			cache_node_in_session(bps, cl);
+			bps->cached_key_dirty = 1; 
+		}
+		
+	}
+	// Case 2: cursor is on the left node and we are about to move keys R
+	else if (cl->key_count > cr->key_count &&
+		node_is_same(cl, bps->cursor_node))
+	{
+		l = (int)floor((cl->key_count + cr->key_count) / 2);
+		r = (int)ceil((cl->key_count + cr->key_count) / 2);
+		int to_move = cl->key_count - l;
+		bps->cursor_pos += to_move;
+		
+		if (bps->cursor_pos >= l)
+		{
+			// We've moved the position to the other node
+			bps->cursor_pos = to_move;
+			cache_node_in_session(bps, cr);
+			bps->cached_key_dirty = 1; 
+		}
+	}
+	
+	return;
 }
 
 void redistribute_keys_lr_nonleaf(bptree_node *p, 

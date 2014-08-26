@@ -842,17 +842,16 @@ TEST_F(BptreeIntBasedTreeTest, DeleteOnConditionAndScan) {
 			rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
 		}
 		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
-		selected.push_back(k2);
 		if (rv == BPTREE_OP_EOF) break;
+		selected.push_back(k2);
 		i++;
 	} 
 	
 	rv = bptree_index_first(bps, &k2, &k2_sz, &v2, &v2_sz);
-	post_del_select.push_back(k2);
 	while(rv != BPTREE_OP_EOF)
 	{
-		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
 		post_del_select.push_back(k2);
+		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
 	}
 	
 	printf("Inserted: ");
