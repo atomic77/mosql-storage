@@ -28,7 +28,7 @@
 #include <vector>
 #include <algorithm>
 #include <set>
-#include "gtest.h"
+#include <gtest/gtest.h>
 #include "test_helpers.h"
 
 using namespace std;

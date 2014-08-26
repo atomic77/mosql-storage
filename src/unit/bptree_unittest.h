@@ -16,7 +16,7 @@
 */
 
 
-#include "gtest.h"
+#include <gtest/gtest.h>
 #define LARGE_BUFFER_SZ 128000
 
 extern "C" {
