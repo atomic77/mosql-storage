@@ -52,7 +52,7 @@ protected:
 		int num_first, int num_second)
 	{
 		if (num_first * num_second >= BPTREE_NODE_SIZE) return NULL;
-		bptree_node *n = create_new_bptree_node(bps);
+		bptree_node *n = bpnode_new();
 
 		//printf("Inserted: ");
 		// TODO fill in some data
@@ -96,7 +96,7 @@ protected:
 	
 	bptree_node * makeRandomBptreeNode(bptree_session *bps, int num_elem) {
 		if (num_elem > BPTREE_NODE_SIZE) return NULL;
-		bptree_node *n = create_new_bptree_node(bps);
+		bptree_node *n = bpnode_new();
 
 		for (int i = 0; i < num_elem; i++) 
 		{
@@ -211,7 +211,7 @@ protected:
 	{
 		// Make a roughly spaced node with n elements
 		if (num_elem > BPTREE_NODE_SIZE) return NULL;
-		bptree_node *n = create_new_bptree_node(bps);
+		bptree_node *n = bpnode_new();
 		
 		int incr = (end - start) / (num_elem);
 
@@ -240,7 +240,7 @@ protected:
 	{
 		
 		bptree_node *p, *cl, *cr;
-		p = create_new_bptree_node(bps);
+		p = bpnode_new();
 		p->leaf = 0;
 		cl = makeIncrementalBptreeNode(bps, 100, 200, l_sz);
 		cr = makeIncrementalBptreeNode(bps, 300, 400, r_sz);
@@ -259,8 +259,8 @@ protected:
 		
 		if (hasChildren) {
 			// Create fake children
-			cl->leaf = 0;
-			cr->leaf = 0;
+			bpnode_set_leaf(cl, 0);
+			bpnode_set_leaf(cr, 0);
 			for (int i =0; i <= cl->key_count; i++) {
 				uuid_generate_random(cl->children[i]);
 			}
@@ -268,8 +268,7 @@ protected:
 				uuid_generate_random(cr->children[i]);
 			}
 		} else {
-			
-			uuid_copy(cl->next_node, cr->self_key);
+			bpnode_set_next(cl, cr);
 		}
 		
 		EXPECT_EQ(is_valid_traversal(bps, p, cl, 0), 0);
@@ -345,7 +344,7 @@ TEST_F(BptreeCoreTest, NodeSerDe) {
 	int c;
 	void *buf, *buf2;
 	bptree_node *n, *n2;
-	n = create_new_empty_bptree_node();
+	n = bpnode_new();
 	n->key_count = 2;
 	uuid_generate_random(n->self_key);
 	n->leaf = 0;
@@ -528,7 +527,7 @@ TEST_F(BptreeCoreTest, FindElementInNode) {
 	bptree_set_field_info(bps, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = create_new_empty_bptree_node();
+	bptree_node *n = bpnode_new();
 	bptree_key_val kv;
 	int k, v;
 	kv.k = (unsigned char *)&k;
@@ -604,7 +603,7 @@ TEST_F(BptreeCoreTest, FindPartialElementInNode) {
 	bptree_set_field_info(bps, 1, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32,
 		int32cmp);
 
-	bptree_node *n = create_new_empty_bptree_node();
+	bptree_node *n = bpnode_new();
 	bptree_key_val kv;
 	int k1, k2, v;
 	unsigned char kbuf[sizeof(int)*2];
@@ -1061,7 +1060,7 @@ TEST_F(BptreeIntBasedTreeTest, SplitOverflowNonLeaf) {
 		uuid_copy(children[i], cl->children[i]);
 	}
 	
-	cr1 = create_new_bptree_node(bps);
+	cr1 = bpnode_new();
 	if (DBUG) {
 		printf("BEFORE split:\n");
 		dump_node_info(bps, p);
@@ -1104,7 +1103,7 @@ TEST_F(BptreeIntBasedTreeTest, SplitOverflowLeaf) {
 	createMiniTree(&p, &cl, BPTREE_NODE_SIZE, 
 			      &cr2, BPTREE_NODE_MIN_SIZE, false);
 	
-	cr1 = create_new_bptree_node(bps);
+	cr1 = bpnode_new();
 	if (DBUG) {
 		printf("BEFORE split:\n");
 		dump_node_info(bps, p);

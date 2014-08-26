@@ -23,6 +23,7 @@
  */
 
 #include "bplustree.h"
+#include "bptree_node.h"
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -59,7 +60,7 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 	
-	if (root->leaf && root->key_count == 0)
+	if (bpnode_is_leaf(root)  && bpnode_is_empty(root))
 	{
 		// Btree is empty
 		return BPTREE_OP_SUCCESS;
@@ -284,7 +285,7 @@ int verify_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	if (rv == BPTREE_OP_TAPIOCA_NOT_READY)
 	{
 		// TODO Rethink this - will probably segfault on multi-node
-		uuid_copy(failed_node, bps->cursor_node->self_key);
+		uuid_copy(failed_node, bpnode_get_id(bps->cursor_node));
 	}
 	printf("Sequential scan returned %d elements\n", elements);
 	return BPTREE_OP_SUCCESS;
@@ -319,7 +320,7 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	for(rv = 0;;)
 	{
 		bptree_key_value_to_string(bps, k,v,ksize,vsize,s1);
-		uuid_unparse(bps->cursor_node->self_key,uuid_out);
+		uuid_unparse(bpnode_get_id(bps->cursor_node), uuid_out);
 		fprintf(fp, "Node->Cell %s -> %d \t Key: %s \n",
 				uuid_out, bps->cursor_pos, s1);
 		rv = bptree_index_next(bps, k, &ksize, v, &vsize);
@@ -333,7 +334,8 @@ int dump_bptree_sequential(bptree_session *bps, uuid_t failed_node)
 	}
 	else if (rv == BPTREE_OP_TAPIOCA_NOT_READY)
 	{
-		uuid_copy(failed_node, bps->cursor_node->self_key);
+		uuid_copy(failed_node, bpnode_get_id(bps->cursor_node));
+		//uuid_copy(failed_node, bps->cursor_node->self_key);
 	}
 	return rv;
 	fflush(fp);
@@ -353,38 +355,39 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 	char s1[512], s2[512], uuid_out[40];
 	bptree_key_val *subtree_max = malloc(sizeof(bptree_key_val));
 
-	get_key_val_ref_from_node(n,n->key_count-1, &loc_max);
+	get_key_val_ref_from_node(n, bpnode_size(n) - 1, &loc_max);
 
 	if (is_node_ordered(bps, n) != 0)
 	{
-		printf("Bpt %d cell %ld was not ordered!\n", bps->bpt_id, n->self_key);
+		printf("Bpt %d cell %ld was not ordered!\n", 
+		       bps->bpt_id, bpnode_get_id(n));
 		*rv = 0;
 		return NULL;
 	}
 
-	if (!n->leaf)
+	if (!bpnode_is_leaf(n))
 	{
-		for (c = 0; c <= n->key_count; c++)
+		for (c = 0; c <= bpnode_size(n); c++)
 		{
 			bptree_node *child;
 			bptree_key_val *kv;
-			child = read_node(bps, n->children[c], &rv2);
+			child = read_node(bps,bpnode_get_child_id(n, c), &rv2);
 			if (rv2 != BPTREE_OP_NODE_FOUND)
 			{
 				*rv = rv2;
 				return NULL;
 			}
-			if (dump_to_text && c < n->key_count)
+			if (dump_to_text && c < bpnode_size(n))
 			{
 				int i;
 				bptree_key_val kv_out;
 				get_key_val_ref_from_node(n,c, &kv_out);
 				bptree_key_value_to_string_kv(bps, &kv_out, s1);
-				uuid_unparse(n->self_key,uuid_out);
+				uuid_unparse(bpnode_get_id(n),uuid_out);
 				fprintf(fp,"%d",level);
 				for (i = 0 ; i<level; i++) fprintf(fp, "-");
 				fprintf(fp, " Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
-						uuid_out, c, s1, child->key_count);
+						uuid_out, c, s1, bpnode_size(child));
 			}
 			kv = verify_bptree_recursive_read(bps, child, dump_to_text,fp, level+1, &rv2);
 			if (rv2 != BPTREE_OP_SUCCESS)
@@ -396,11 +399,11 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 			// The max key in this node should be greater than all child maxes
 			// other than the final node
 			invalid = 0;
-			if (c < n->key_count && bptree_compar_keys(bps, kv, &loc_max) > 0)
+			if (c < bpnode_size(n) && bptree_compar_keys(bps, kv, &loc_max) > 0)
 			{
 				invalid = 1;
 			}
-			else if (c>= n->key_count)
+			else if (c>= bpnode_size(n))
 			{
 				if(bptree_compar_keys(bps,kv,&loc_max) < 0) invalid = 2;
 				copy_key_val(subtree_max, kv);
@@ -425,12 +428,12 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 		if (dump_to_text)
 		{
 			int c;
-			for (c = 0; c < n->key_count; c++) {
+			for (c = 0; c < bpnode_size(n); c++) {
 				int i;
 				bptree_key_val kv_out;
 				get_key_val_ref_from_node(n,c, &kv_out);
 				bptree_key_value_to_string_kv(bps, &kv_out, s1);
-				uuid_unparse(n->self_key,uuid_out);
+				uuid_unparse(bpnode_get_id(n),uuid_out);
 				fprintf(fp,"%d",level);
 				for (i = 0 ; i<level; i++) fprintf(fp, "-");
 				fprintf(fp, " Node->Cell %s -> %d \t Key: %s \t chld_sz %d \n",
@@ -509,27 +512,27 @@ int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 		dump_node_info_fp(bps, n, fp);
 	}
 	
-	if (!n->leaf)
+	if (!bpnode_is_leaf(n))
 	{
-		for (c = 0; c <= n->key_count; c++)
+		for (c = 0; c <= bpnode_size(n); c++)
 		{
 			bptree_node *child;
 
-			if (c < n->key_count) get_key_val_ref_from_node(n, c, &kv);
+			if (c < bpnode_size(n)) get_key_val_ref_from_node(n, c, &kv);
 
 			if (bptree_compar_keys(bps, &kv, prune_kv) > 0 )
 			{
-				child = read_node(bps, n->children[c], &rv);
+				child = read_node(bps, bpnode_get_child_id(n, c), &rv);
 				if (rv != BPTREE_OP_NODE_FOUND)
 				{
-					uuid_copy(failed_node, n->children[c]);
+					uuid_copy(failed_node, bpnode_get_child_id(n, c));
 					uuid_unparse(failed_node, uuid_out);
 					printf("Failed on node %s after %d reading nodes\n",
 							uuid_out, *nodes);
 					return rv;
 				}
 #ifdef PARANOID_MODE
-				if(uuid_compare(n->self_key, child->parent) != 0)
+				if(uuid_compare(bpnode_get_id(n), child->parent) != 0)
 				{
 					printf("Misalignment of parent-child in tree!\n");
 					return BPTREE_OP_TREE_ERROR;
@@ -584,54 +587,54 @@ int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 	char s1[512], s2[512];
 	bptree_key_val kv;
 	char *key_str;
-	assert (n->key_count <= 2*BPTREE_MIN_DEGREE-1);
-	uuid_unparse(n->self_key, uuid_out_n);
+	assert (bpnode_size(n) <= 2*BPTREE_MIN_DEGREE-1);
+	uuid_unparse(bpnode_get_id(n), uuid_out_n);
 	fprintf(fp, "\n\n");
 	fprintf(fp, "\"N-%s\" [ label = < ", uuid_out_n);
 	// use the first 8 chars of the uuid as the label
 	strncpy(uuid_upper, uuid_out_n, 8);
 	char ch = 'I';
-	if(n->leaf) ch = 'L';
+	if(bpnode_is_leaf(n)) ch = 'L';
 	uuid_upper[8] = '\0';
-//	fprintf(fp, "%s (%d) [%d] %c :  ", uuid_upper, n->key_count, n->tapioca_client_id, ch);
-	if (n->key_count > 0) {
+//	fprintf(fp, "%s (%d) [%d] %c :  ", uuid_upper, bpnode_size(n), n->tapioca_client_id, ch);
+	if (bpnode_size(n) > 0) {
 		get_key_val_ref_from_node(n, 0, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s1);
 		//	free(key_str);
 		fprintf(fp, "  %s  ", s1);
-		get_key_val_ref_from_node(n, n->key_count-1, &kv);
+		get_key_val_ref_from_node(n, bpnode_size(n)-1, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s2);
 		//	free(key_str);
 		fprintf(fp, " %s ", s2);
 
 	}
 	fprintf(fp, " > ");
-	if (uuid_is_null(n->parent)) fprintf(fp, " , shape=\"diamond\"");
-	else if (!n->leaf) fprintf(fp, " , shape=\"rect\"");
+	if (uuid_is_null(bpnode_get_parent_id(n))) fprintf(fp, " , shape=\"diamond\"");
+	else if (!bpnode_is_leaf(n)) fprintf(fp, " , shape=\"rect\"");
 	fprintf(fp, " ] \n");
-	if (!n->leaf) {
-		for (c = 0; c <= n->key_count; c++) {
-			uuid_unparse(n->children[c], uuid_out_c);
+	if (!bpnode_is_leaf(n)) {
+		for (c = 0; c <= bpnode_size(n); c++) {
+			uuid_unparse(bpnode_get_child_id(n, c), uuid_out_c);
 			fprintf(fp, "\"N-%s\" -> \"N-%s\"\n [color=\"#CC0000\"] ",
 					uuid_out_n, uuid_out_c);
 		}
-		for (c = 0; c <= n->key_count; c++) {
+		for (c = 0; c <= bpnode_size(n); c++) {
 			bptree_node *next;
-			next = read_node(bps,n->children[c], &rv);
+			next = read_node(bps,bpnode_get_child_id(n, c), &rv);
 			if ( next == NULL) return -1;
 			output_bptree_recursive(bps, next, level+1, fp);
 		}
 	} else {
-		uuid_unparse(n->next_node, uuid_out_c);
-		if (!uuid_is_null(n->next_node))
+		uuid_unparse(bpnode_get_next_id(n), uuid_out_c);
+		if (!uuid_is_null(bpnode_get_next_id(n)))
 			fprintf(fp, "\"N-%s\" -> \"N-%s\"\n ", uuid_out_n, uuid_out_c);
 //		if (!uuid_is_null(n->prev_node))
 //			uuid_unparse(n->prev_node, uuid_out_c);
 //		fprintf(fp, "\"N-%s\" -> \"N-%s\" [weight = 100.0]\n ", uuid_out_n, uuid_out_c);
 	}
 //	// Print parent link
-//	uuid_unparse(n->parent, uuid_out_c);
-//	if (!uuid_is_null(n->parent))
+//	uuid_unparse(bpnode_get_parent_id(n), uuid_out_c);
+//	if (!uuid_is_null(bpnode_get_parent_id(n)))
 //		fprintf(fp, "\"N-%s\" -> \"N-%s\" [color=\"#CC0000\"] \n ",
 //			uuid_out_n, uuid_out_c);
 //
@@ -656,37 +659,39 @@ void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp)
 	if ( (rv = is_node_sane(n)) != 0)
 		fprintf(fp, "\tB+tree node failed sanity check rv %d!!\n", rv);
 
-	fprintf(fp, "\tLeaf: %d\n", n->leaf);
+	fprintf(fp, "\tLeaf: %d\n", bpnode_is_leaf(n));
 
-	uuid_unparse(n->self_key, uuid_out);
+	uuid_unparse(bpnode_get_id(n), uuid_out);
 	fprintf(fp, "\tSelf key: %s\n", uuid_out);
-	uuid_unparse(n->parent, uuid_out);
+	uuid_unparse(bpnode_get_parent_id(n), uuid_out);
 	fprintf(fp, "\tParent key: %s\n", uuid_out);
-	uuid_unparse(n->next_node, uuid_out);
+	uuid_unparse(bpnode_get_next_id(n), uuid_out);
 	fprintf(fp, "\tNext key: %s\n", uuid_out);
-	uuid_unparse(n->prev_node, uuid_out);
+	uuid_unparse(bpnode_get_prev_id(n), uuid_out);
 	fprintf(fp, "\tPrev key: %s\n", uuid_out);
 
 
-	fprintf(fp, "\tKey count: %d\n", n->key_count);
+	fprintf(fp, "\tKey count: %d\n", bpnode_size(n));
 	fprintf(fp, "\tKey/value sizes: ");
-	for (i =0; i < n->key_count; i++)
-		fprintf (fp, "(%d, %d), ", n->key_sizes[i], n->value_sizes[i]);
+	for (i =0; i < bpnode_size(n); i++)
+		fprintf (fp, "(%d, %d), ", 
+			 bpnode_get_key_size(n,i),
+			 bpnode_get_value_size(n,i));
 
 	fprintf(fp, "\n\tKeys:\n\t\t");
-	for (i =0; i < n->key_count; i++)
+	for (i =0; i < bpnode_size(n); i++)
 	{
 		get_key_val_ref_from_node(n, i, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s1);
 		fprintf(fp, " %s ", s1);
 	}
 
-	if(!n->leaf)
+	if(!bpnode_is_leaf(n))
 	{
 		fprintf(fp, "\n\tChild nodes:\n");
-		for (i =0; i <= n->key_count; i++)
+		for (i =0; i <= bpnode_size(n); i++)
 		{
-			uuid_unparse(n->children[i], uuid_out);
+			uuid_unparse(bpnode_get_child_id(n, i), uuid_out);
 			fprintf(fp, "\t\t%d: %s \n", i, uuid_out);
 		}
 	}
@@ -725,9 +730,9 @@ void write_node_info(bptree_session *bps, char *s, bptree_node *n)
 	char uu[40];
 	char c[512];
 	bzero(c,512);
-	uuid_unparse(n->self_key, uu);
+	uuid_unparse(bpnode_get_id(n), uu);
 	uu[8] = '\0'; // print first 8 bytes...
-	for (i=0; i<n->key_count; i++)
+	for (i=0; i<bpnode_size(n); i++)
 	{
 		bptree_key_value_to_string(bps, n->keys[i], n->values[i],
 				n->key_sizes[i], n->value_sizes[i], c);
@@ -737,13 +742,13 @@ void write_node_info(bptree_session *bps, char *s, bptree_node *n)
 		sprintf(sptr, ", ");
 		sptr += 2;
 	}
-	if (n->key_count > 0)
+	if (bpnode_size(n) > 0)
 	{
 		sptr -= 2;
 		bzero(sptr, 2);
 	}
 	sprintf(sptr, " Cnt: %d L: %d ID: %s WC: %d Ver: %d ST: %d ",
-			n->key_count, n->leaf, uu, n->write_count, n->last_version,
+			bpnode_size(n), bpnode_is_leaf(n), uu, n->write_count, n->last_version,
 			bps->t->st);
 }
 
@@ -838,10 +843,10 @@ int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client)
 			{
 				memcpy(&bpt_id, kk+1, sizeof(int16_t));
 				n = unmarshall_bptree_node(vv, v->size, &nsize);
-				uuid_unparse(n->self_key, uu);
+				uuid_unparse(bpnode_get_id(n), uu);
 				fprintf(trace_fp, "%d |\tBPT:%d\t%s\tCnt:%d\tLeaf:%d"
 									"\tWriteCnt %d P/C Cl_id %d,%d\n",
-						t->client_id, bpt_id, uu, n->key_count, n->leaf,
+						t->client_id, bpt_id, uu, bpnode_size(n), bpnode_is_leaf(n),
 						n->write_count, prev_client, n->tapioca_client_id );
 			} else if(*kk == BPTREE_META_NODE_PACKET_HEADER)
 			{

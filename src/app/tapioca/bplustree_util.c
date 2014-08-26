@@ -17,15 +17,3 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "bplustree_util.h"
-
-void free_key_val(bptree_key_val **kv)
-{
-	if(*kv == NULL) assert (0 == 0xDEADBEEF);
-	free((*kv)->k);
-	free((*kv)->v);
-	(*kv)->k = NULL;
-	(*kv)->v = NULL;
-	free(*kv);
-	*kv = NULL;
-}

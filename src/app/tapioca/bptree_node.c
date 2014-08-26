@@ -5,9 +5,6 @@
 #include <assert.h>
 
 
-#define BPTREE_META_NODE_PACKET_HEADER 0x4
-#define BPTREE_NODE_PACKET_HEADER 0x5
-
 typedef struct bptree_node {
 	uuid_t self_key;
 	int16_t key_count;
@@ -26,24 +23,51 @@ typedef struct bptree_node {
 } bptree_node;
 
 
-uuid_t *bpnode_get_id(bptree_node *x)
+unsigned char * bpnode_get_id(bptree_node *x)
 {
 	return x->self_key;
 }
 
-uuid_t *bpnode_get_child_id(bptree_node* x, int c_pos)
+
+unsigned char * bpnode_get_child_id(bptree_node* x, int c_pos)
 {
 	return x->children[c_pos];
 }
 
+unsigned char * bpnode_get_parent_id(bptree_node *x)
+{
+	return x->parent;
+}
+unsigned char * bpnode_get_next_id(bptree_node *x)
+{
+	return x->next_node;
+}
+unsigned char * bpnode_get_prev_id(bptree_node *x)
+{
+	return x->prev_node;
+}
 int bpnode_size(bptree_node *x) 
 {
 	return x->key_count;
 }
 
+int bpnode_is_eof(bptree_node *x)
+{
+	return (x->leaf && uuid_is_null(x->next_node));
+}
+
 int bpnode_is_leaf(bptree_node *x)
 {
 	return x->leaf;
+}
+
+int bpnode_set_active(bptree_node *x, int pos)
+{
+	x->active[pos] = 1;
+}
+int bpnode_set_inactive(bptree_node *x, int pos)
+{
+	x->active[pos] = 0;
 }
 
 int bpnode_set_leaf(bptree_node *x, int leaf)
@@ -81,6 +105,11 @@ void bpnode_clear_parent(bptree_node *x)
 	uuid_clear(x->parent);
 }
 
+void bpnode_clear_child(bptree_node *x, int c)
+{
+	uuid_clear(x->children[c]);
+}
+
 unsigned char *bpnode_get_key(bptree_node *x, int pos)
 {
 	return x->keys[pos];
@@ -109,6 +138,23 @@ int bpnode_is_same(bptree_node *x, bptree_node *y)
 	return (uuid_compare(x->self_key, y->self_key) == 0);
 }
 
+int bpnode_is_empty(bptree_node * n)
+{
+	return n->key_count == 0;
+}
+int bpnode_is_active(bptree_node *x, int pos)
+{
+	return x->active[pos];
+}
+void bpnode_set_child(bptree_node *x, int pos, bptree_node *c)
+{
+	uuid_copy(x->children[pos], c->self_key);
+}
+
+void bpnode_set_next_id(bptree_node *x, uuid_t id)
+{
+	uuid_copy(x->next_node, id);
+}
 
 /*@ Shift the elements of bptree_node right at position pos*/
 void shift_bptree_node_elements_right(bptree_node *x, int pos)
@@ -406,11 +452,11 @@ inline int is_bptree_node_underflowed(bptree_node *x)
 	return x->key_count < BPTREE_NODE_MIN_SIZE;
 }
 
-
-bptree_node * create_new_empty_bptree_node()
+bptree_node * bpnode_new()
 {
 	int i;
 	bptree_node *n = malloc(sizeof(bptree_node));
+	uuid_generate(n->self_key);
 	if (n == NULL) return NULL;
 	n->key_count = 0;
 	n->leaf = 1;
@@ -453,12 +499,6 @@ int free_node(bptree_node **n)
 	free(*n);
 	*n = NULL;
 	return BPTREE_OP_SUCCESS;
-}
-
-void free_meta_node(bptree_meta_node **m)
-{
-	free(*m);
-	*m = NULL;
 }
 
 // Pack all non-dynamic array stuff first, in the order of the struct def
@@ -534,7 +574,7 @@ bptree_node * unmarshall_bptree_node(const void *buf,
 
 	int i;
 	size_t offset = 0;
-	bptree_node *n = create_new_empty_bptree_node();
+	bptree_node *n = bpnode_new();
 	*nsize = sizeof(bptree_node);
 
     ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
@@ -648,7 +688,7 @@ bptree_node *copy_node(bptree_node *n)
 	bptree_node *x;
 	//x = malloc(sizeof(bptree_node));
 	// Ensure we use the standard way of creating a new , uninitialized node
-	x = create_new_empty_bptree_node();
+	x = bpnode_new();
 	int i;
 	uuid_copy(x->self_key, n->self_key);
 	x->key_count = n->key_count;
@@ -675,7 +715,7 @@ bptree_node *copy_node(bptree_node *n)
 }
 
 
-static int node_is_full(bptree_node* n)
+int bpnode_is_full(bptree_node* n)
 {
 	return (n->key_count == (BPTREE_NODE_SIZE));
 }

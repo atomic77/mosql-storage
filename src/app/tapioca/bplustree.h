@@ -52,7 +52,9 @@
 #undef BPTREE_MARSHALLING_TPL
 #define BPTREE_MARSHALLING_MSGPACK
 
-#define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
+#define BPTREE_META_NODE_PACKET_HEADER 0x4
+#define BPTREE_NODE_PACKET_HEADER 0x5
+
 
 //#define BPTREE_TPL_NODE_FMT "Ijji#A(B)i#A(B)I#IIIc#"  // pre-UUID move
 #define BPTREE_TPL_NODE_FMT "c#jji#A(B)i#A(B)c##c#c#c#c#" // array of arrays?
@@ -98,6 +100,7 @@ typedef struct bptree_meta_node {
 	tapioca_bptree_id bpt_id;
 	int32_t last_version; // we will not persist this
 } bptree_meta_node;
+
 
 
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
@@ -192,8 +195,6 @@ void bptree_key_value_to_string(bptree_session *bps, unsigned char *k,
 void bptree_key_value_to_string_kv(bptree_session *bps, bptree_key_val *kv,
 		char *out);
 
-bptree_node * create_new_empty_bptree_node();
-bptree_node * create_new_bptree_node(bptree_session *bps);
 int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 		void *data);
 
