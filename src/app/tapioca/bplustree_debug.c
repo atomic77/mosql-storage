@@ -695,3 +695,168 @@ void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp)
 
 	fflush(fp);
 }
+
+
+#ifdef TRACE_MODE
+
+void get_trace_file(void)
+{
+	if (!file_opened)
+	{
+		char fl[128];
+		sprintf(fl, "/tmp/tapioca-%d.trc", getpid());
+		trace_fp = fopen((const char *)fl, "w");
+		file_opened = 1;
+	}
+}
+
+void prepend_client_and_whitespace(bptree_session *bps, int lvl)
+{
+	int i;
+	fprintf(trace_fp, "%d |", bps->tapioca_client_id);
+	for (i=0; i<lvl; i++) fprintf(trace_fp, "  ");
+}
+
+/*@ Write trace-appropriate data into s for the given node */
+void write_node_info(bptree_session *bps, char *s, bptree_node *n)
+{
+	int i;
+	char *sptr = s;
+	char uu[40];
+	char c[512];
+	bzero(c,512);
+	uuid_unparse(n->self_key, uu);
+	uu[8] = '\0'; // print first 8 bytes...
+	for (i=0; i<n->key_count; i++)
+	{
+		bptree_key_value_to_string(bps, n->keys[i], n->values[i],
+				n->key_sizes[i], n->value_sizes[i], c);
+		// Unsafe. Oh well
+		strcpy(sptr, c);
+		sptr += strlen(c);
+		sprintf(sptr, ", ");
+		sptr += 2;
+	}
+	if (n->key_count > 0)
+	{
+		sptr -= 2;
+		bzero(sptr, 2);
+	}
+	sprintf(sptr, " Cnt: %d L: %d ID: %s WC: %d Ver: %d ST: %d ",
+			n->key_count, n->leaf, uu, n->write_count, n->last_version,
+			bps->t->st);
+}
+
+int write_insert_to_trace(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int pos, int lvl)
+{
+	int i;
+	unsigned char *kk, *vv;
+	int16_t bpt_id;
+	size_t nsize;
+	char uu[40],res[20];
+	char nodestr[4096];
+	get_trace_file();
+
+	bptree_key_value_to_string_kv(bps, kv, nodestr);
+	prepend_client_and_whitespace(bps, lvl);
+	fprintf(trace_fp, "Insert key: %s pos %d lvl %d\n", nodestr, pos, lvl);
+	bzero(nodestr, 4096);
+
+	// X
+	prepend_client_and_whitespace(bps, lvl);
+	write_node_info(bps, nodestr, x);
+	fprintf(trace_fp, "X  : %s\n", nodestr);
+
+	bzero(nodestr, 4096);
+
+	return 0;
+}
+
+int write_split_to_trace(bptree_session *bps, bptree_node *x, bptree_node *y,
+		bptree_node *new, int pos, int lvl)
+{
+	int i;
+	unsigned char *kk, *vv;
+	int16_t bpt_id;
+	size_t nsize;
+	char uu[40],res[20];
+	char nodestr[4096];
+	get_trace_file();
+
+	prepend_client_and_whitespace(bps, lvl);
+	if (new == NULL) fprintf(trace_fp, "Pre-Split pos %d lvl %d\n", pos, lvl);
+	if (new != NULL) fprintf(trace_fp, "Post-Split pos %d lvl %d\n", pos, lvl);
+
+	// X
+	prepend_client_and_whitespace(bps, lvl);
+	write_node_info(bps, nodestr, x);
+	fprintf(trace_fp, "X  : %s\n", nodestr);
+	bzero(nodestr, 4096);
+
+	// Y
+	prepend_client_and_whitespace(bps, lvl);
+	write_node_info(bps, nodestr, y);
+	fprintf(trace_fp, "Y  : %s\n", nodestr);
+	bzero(nodestr, 4096);
+
+	// New
+	if(new != NULL)
+	{
+		prepend_client_and_whitespace(bps, lvl);
+		write_node_info(bps, nodestr, new);
+		fprintf(trace_fp, "New: %s\n", nodestr);
+	}
+
+	return 0;
+}
+
+int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client)
+{
+	bptree_node *n;
+	bptree_meta_node *m;
+	unsigned char *kk, *vv;
+	int16_t bpt_id;
+	size_t nsize;
+	char uu[40],res[20];
+	get_trace_file();
+	switch (type) {
+		// Three different commit-types (1,-1,-2)
+		case T_COMMITTED:
+			fprintf(trace_fp, "%d | COMMIT\n", t->client_id);
+			break;
+		case T_ABORTED:
+			fprintf(trace_fp, "%d | ABORT\n", t->client_id);
+			break;
+		case T_ERROR:
+			fprintf(trace_fp, "%d | ERROR\n", t->client_id);
+			break;
+		case 0: // o/w this was a put
+			kk = k->data;
+			vv = v->data;
+			if(*kk == BPTREE_NODE_PACKET_HEADER)
+			{
+				memcpy(&bpt_id, kk+1, sizeof(int16_t));
+				n = unmarshall_bptree_node(vv, v->size, &nsize);
+				uuid_unparse(n->self_key, uu);
+				fprintf(trace_fp, "%d |\tBPT:%d\t%s\tCnt:%d\tLeaf:%d"
+									"\tWriteCnt %d P/C Cl_id %d,%d\n",
+						t->client_id, bpt_id, uu, n->key_count, n->leaf,
+						n->write_count, prev_client, n->tapioca_client_id );
+			} else if(*kk == BPTREE_META_NODE_PACKET_HEADER)
+			{
+				memcpy(&bpt_id, kk+1, sizeof(int16_t));
+				m = unmarshall_bptree_meta_node(vv, v->size);
+				uuid_unparse(m->root_key, uu);
+				fprintf(trace_fp, "%d |\tBPT:%d\tMeta:%s\n",
+						t->client_id, bpt_id, uu);
+			}
+
+			break;
+		default:
+			break;
+	}
+	return 0;
+}
+#endif
+
