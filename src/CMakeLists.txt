@@ -8,7 +8,6 @@ find_package(LIBEVENT REQUIRED)
 find_package(LIBPAXOS REQUIRED)
 find_package(LIBUUID REQUIRED)
 find_package(MSGPACK REQUIRED)
-find_package(GSL REQUIRED)
 
 # System libraries
 set(TAPIOCA_LINKER_LIBS ${TAPIOCA_LINKER_LIBS} pthread )
@@ -26,7 +25,12 @@ add_subdirectory(app/rec)
 add_subdirectory(app/shell)
 add_subdirectory(app/tapioca)
 add_subdirectory(test)
-add_subdirectory(unit)
+
+if (BUILD_UNIT)
+	find_package(GTEST REQUIRED)
+	find_package(GSL REQUIRED)
+	add_subdirectory(unit)
+endif()
 
 INSTALL(FILES ../script/launchers.sh ../script/launch_all.sh ../script/acc.sh ../script/cm_tap.sh DESTINATION scripts)
 INSTALL(FILES ../config/1.cfg ../config/2.cfg ../config/paxos_config.cfg DESTINATION config)
