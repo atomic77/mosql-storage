@@ -151,9 +151,19 @@ void bpnode_set_child(bptree_node *x, int pos, bptree_node *c)
 	uuid_copy(x->children[pos], c->self_key);
 }
 
+void bpnode_set_child_id(bptree_node *x, int pos, uuid_t id)
+{
+	uuid_copy(x->children[pos], id);
+}
+
 void bpnode_set_next_id(bptree_node *x, uuid_t id)
 {
 	uuid_copy(x->next_node, id);
+}
+
+int bpnode_is_node_active(bptree_node *x)
+{
+	return x->node_active;
 }
 
 /*@ Shift the elements of bptree_node right at position pos*/
@@ -456,26 +466,26 @@ bptree_node * bpnode_new()
 {
 	int i;
 	bptree_node *n = malloc(sizeof(bptree_node));
-	uuid_generate(n->self_key);
 	if (n == NULL) return NULL;
-	n->key_count = 0;
+	memset(n, 0, sizeof(bptree_node));
+	//n->key_count = 0;
 	n->leaf = 1;
 	n->node_active = 1;
 
-	uuid_clear(n->self_key);
-	uuid_clear(n->next_node);
-	uuid_clear(n->prev_node);
-	uuid_clear(n->parent);
+	uuid_generate(n->self_key);
+	//uuid_clear(n->next_node);
+	//uuid_clear(n->prev_node);
+	//uuid_clear(n->parent);
 	for (i = 0; i < BPTREE_NODE_SIZE; i++)
 	{
 		n->key_sizes[i] = -1;
 		n->value_sizes[i] = -1;
-		n->keys[i] = NULL;
-		n->values[i] = NULL;
-		n->active[i] = 0;
-		uuid_clear(n->children[i]);
+		//n->keys[i] = NULL;
+		//n->values[i] = NULL;
+		//n->active[i] = 0;
+		//uuid_clear(n->children[i]);
 	}
-	uuid_clear(n->children[BPTREE_NODE_SIZE]);
+	//uuid_clear(n->children[BPTREE_NODE_SIZE]);
 
 	return n;
 
@@ -504,7 +514,8 @@ int free_node(bptree_node **n)
 // Pack all non-dynamic array stuff first, in the order of the struct def
 void * marshall_bptree_node(bptree_node *n, size_t *bsize)
 {
-	assert(is_node_sane(n) == 0);
+	int _rv = is_node_sane(n);
+	assert(_rv == 0);
 
 	int i;
     /* creates buffer and serializer instance. */
@@ -746,7 +757,7 @@ void copy_key_val(bptree_key_val *dest, bptree_key_val *src)
 	dest->ksize = src->ksize;
 	dest->vsize = src->vsize;
 }
-bptree_key_val * copy_key_val_from_node(bptree_node *n, int i)
+bptree_key_val * bpnode_get_kv(bptree_node *n, int i)
 {
 	bptree_key_val *kv = malloc(sizeof(bptree_key_val));
 	assert(n->key_sizes[i] < BPTREE_MAX_VALUE_SIZE);
@@ -759,11 +770,18 @@ bptree_key_val * copy_key_val_from_node(bptree_node *n, int i)
 	kv->vsize = n->value_sizes[i];
 	return kv;
 }
-// Another utility method to eliminate a lot of messy code
-void get_key_val_ref_from_node(bptree_node *n, int i, bptree_key_val *kv)
+void bpnode_get_kv_ref(bptree_node *n, int i, bptree_key_val *kv)
 {
 	kv->k = n->keys[i];
 	kv->v = n->values[i];
+	kv->ksize = n->key_sizes[i];
+	kv->vsize = n->value_sizes[i];
+}
+
+void bpnode_pop_kv(bptree_node *n, int i, bptree_key_val *kv)
+{
+	memcpy(kv->k, n->keys[i], n->key_sizes[i]);
+	memcpy(kv->v, n->values[i], n->value_sizes[i]);
 	kv->ksize = n->key_sizes[i];
 	kv->vsize = n->value_sizes[i];
 }

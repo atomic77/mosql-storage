@@ -56,6 +56,7 @@ unsigned char * bpnode_get_prev_id(bptree_node *x);
 int bpnode_size(bptree_node *x);
 int bpnode_is_leaf(bptree_node *x);
 int bpnode_is_active(bptree_node *x, int pos);
+int bpnode_is_node_active(bptree_node *x);
 int bpnode_set_leaf(bptree_node *x, int leaf);
 int bpnode_set_active(bptree_node *x, int pos);
 int bpnode_set_inactive(bptree_node *x, int pos);
@@ -109,8 +110,10 @@ void delete_key_from_node(bptree_node *x, int pos);
 void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
 
-bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
-void get_key_val_ref_from_node(bptree_node *n, int i, bptree_key_val *kv);
+bptree_key_val * bpnode_get_kv(bptree_node *n, int i);
+void bpnode_get_kv_ref(bptree_node *n, int i, bptree_key_val *kv);
+/*@ Assume kv has pointers to alloc'd memory */
+void bpnode_pop_kv(bptree_node *n, int i, bptree_key_val *kv);
 
 void redistribute_keys(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);
 void concatenate_nodes(bptree_node *p, bptree_node *cl, bptree_node *cr, int i);

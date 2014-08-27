@@ -355,7 +355,7 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 	char s1[512], s2[512], uuid_out[40];
 	bptree_key_val *subtree_max = malloc(sizeof(bptree_key_val));
 
-	get_key_val_ref_from_node(n, bpnode_size(n) - 1, &loc_max);
+	bpnode_get_kv_ref(n, bpnode_size(n) - 1, &loc_max);
 
 	if (is_node_ordered(bps, n) != 0)
 	{
@@ -381,7 +381,7 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 			{
 				int i;
 				bptree_key_val kv_out;
-				get_key_val_ref_from_node(n,c, &kv_out);
+				bpnode_get_kv_ref(n,c, &kv_out);
 				bptree_key_value_to_string_kv(bps, &kv_out, s1);
 				uuid_unparse(bpnode_get_id(n),uuid_out);
 				fprintf(fp,"%d",level);
@@ -431,7 +431,7 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 			for (c = 0; c < bpnode_size(n); c++) {
 				int i;
 				bptree_key_val kv_out;
-				get_key_val_ref_from_node(n,c, &kv_out);
+				bpnode_get_kv_ref(n,c, &kv_out);
 				bptree_key_value_to_string_kv(bps, &kv_out, s1);
 				uuid_unparse(bpnode_get_id(n),uuid_out);
 				fprintf(fp,"%d",level);
@@ -473,7 +473,7 @@ int bptree_index_scan(bptree_session *bps,bptree_node *root, uuid_t failed_node,
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
 		uuid_unparse(failed_node, uuid_out);
 		printf("Previous failed node %s \n", uuid_out);
-		get_key_val_ref_from_node(n,0,&kv);
+		bpnode_get_kv_ref(n,0,&kv);
 
 	} else {
 		// Use a 'null' key as our comparison point to grab everything
@@ -518,7 +518,7 @@ int bptree_index_scan_recursive(bptree_session *bps, bptree_node *n,
 		{
 			bptree_node *child;
 
-			if (c < bpnode_size(n)) get_key_val_ref_from_node(n, c, &kv);
+			if (c < bpnode_size(n)) bpnode_get_kv_ref(n, c, &kv);
 
 			if (bptree_compar_keys(bps, &kv, prune_kv) > 0 )
 			{
@@ -598,11 +598,11 @@ int output_bptree_recursive(bptree_session *bps,bptree_node* n,
 	uuid_upper[8] = '\0';
 //	fprintf(fp, "%s (%d) [%d] %c :  ", uuid_upper, bpnode_size(n), n->tapioca_client_id, ch);
 	if (bpnode_size(n) > 0) {
-		get_key_val_ref_from_node(n, 0, &kv);
+		bpnode_get_kv_ref(n, 0, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s1);
 		//	free(key_str);
 		fprintf(fp, "  %s  ", s1);
-		get_key_val_ref_from_node(n, bpnode_size(n)-1, &kv);
+		bpnode_get_kv_ref(n, bpnode_size(n)-1, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s2);
 		//	free(key_str);
 		fprintf(fp, " %s ", s2);
@@ -681,7 +681,7 @@ void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp)
 	fprintf(fp, "\n\tKeys:\n\t\t");
 	for (i =0; i < bpnode_size(n); i++)
 	{
-		get_key_val_ref_from_node(n, i, &kv);
+		bpnode_get_kv_ref(n, i, &kv);
 		bptree_key_value_to_string_kv(bps, &kv, s1);
 		fprintf(fp, " %s ", s1);
 	}

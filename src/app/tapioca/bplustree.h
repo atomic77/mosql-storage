@@ -136,9 +136,9 @@ inline int bptree_compar_keys(bptree_session *bps,
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields);
-inline void get_key_val_ref_from_node(bptree_node *n, int i, bptree_key_val *kv);
+inline void bpnode_get_kv_ref(bptree_node *n, int i, bptree_key_val *kv);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
-bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
+bptree_key_val * bpnode_get_kv(bptree_node *n, int i);
 
 void free_meta_node(bptree_meta_node **m);
 
