@@ -5,7 +5,7 @@
 #include <assert.h>
 
 
-typedef struct bptree_node {
+struct bptree_node {
 	uuid_t self_key;
 	int16_t key_count;
 	int16_t leaf;
@@ -20,7 +20,7 @@ typedef struct bptree_node {
 	unsigned char *values[BPTREE_NODE_SIZE];
 	// TODO Dynamically allocate this based on whether this is a leaf or not
 	uuid_t children[BPTREE_NODE_SIZE + 1];
-} bptree_node;
+} ;
 
 
 unsigned char * bpnode_get_id(bptree_node *x)
