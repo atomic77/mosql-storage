@@ -165,7 +165,7 @@ static handler handle[] =
 	  handle_bptree_search,
 	  handle_bptree_index_first,
 	  handle_bptree_index_next,
-	  handle_bptree_index_next_mget,
+	  handle_bptree_index_next_mget, 
 	  handle_bptree_index_first_no_key,
 	  handle_bptree_debug,
 	  handle_bptree_delete /* 26 */
@@ -1174,7 +1174,6 @@ static void handle_bptree_index_next(tcp_client* c,struct evbuffer* buffer)
 	}
 
 }
-
 static void handle_bptree_index_next_mget(tcp_client* c,struct evbuffer* buffer)
 {
 	int rv;
