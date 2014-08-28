@@ -46,7 +46,7 @@ TEST_F(BptreeCoreTest, NodeSerDe) {
 	kv1.v = (unsigned char *) malloc(3);
 	kv2.v = (unsigned char *) malloc(9);
 	strncpy((char *)kv1.v , "ccc", 3);
-	strncpy((char *)kv2.v , "dddddddd", 10);
+	strncpy((char *)kv2.v , "dddddddd", 8);
 	copy_key_val_to_node(n, &kv1, 0);
 	copy_key_val_to_node(n, &kv2, 1);
 	buf = marshall_bptree_node(n, &bsize1);

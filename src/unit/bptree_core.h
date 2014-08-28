@@ -15,6 +15,10 @@ extern "C" {
 }
 
 class BptreeCoreTest : public testing::Test {
+public:
+    BptreeCoreTest() {
+	   DBUG = false; 
+    }
 
 protected:
 	
@@ -148,7 +152,7 @@ protected:
 	virtual void SetUp() {
 		//system("cd ..; ./start.sh > /dev/null; cd unit");
 		bps = mockBptreeSessionCreate();
-		DBUG = false;
+		//DBUG = false;
 	}
 	
 	virtual void TearDown() {

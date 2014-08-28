@@ -130,7 +130,7 @@ int bptree_update(bptree_session *bps,  void *k, int32_t ksize,
 int bptree_insert(bptree_session *bps, void *k, int32_t ksize,
 		void *v, int32_t vsize);
 
-inline int bptree_compar_keys(bptree_session *bps,
+int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2);
 //int bptree_compar(bptree_session *bps, const void *b1, const void *b2);
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
@@ -205,7 +205,7 @@ int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_nod
 int is_node_sane(bptree_node *n);
 int is_correct_node(bptree_node *n, uuid_t node_key);
 
-inline int bptree_compar_to_node(bptree_session *bps,
+int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);
 
 int is_valid_traversal(bptree_session *bps, bptree_node *x,

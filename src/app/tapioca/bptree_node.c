@@ -112,21 +112,25 @@ void bpnode_clear_child(bptree_node *x, int c)
 
 unsigned char *bpnode_get_key(bptree_node *x, int pos)
 {
+	assert(x->keys[pos] != NULL);
 	return x->keys[pos];
 }
 
 unsigned char *bpnode_get_value(bptree_node *x, int pos)
 {
+	assert(x->values[pos] != NULL);
 	return x->values[pos];
 }
 
 int bpnode_get_key_size(bptree_node *x, int pos)
 {
+	assert(x->key_sizes[pos] >= 0 && x->key_sizes[pos] < 66000);
 	return x->key_sizes[pos];
 }
 
 int bpnode_get_value_size(bptree_node *x, int pos)
 {
+	assert(x->value_sizes[pos] >= 0 && x->value_sizes[pos] < 66000);
 	return x->value_sizes[pos];
 }
 

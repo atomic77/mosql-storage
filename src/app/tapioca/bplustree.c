@@ -26,6 +26,8 @@ FILE *trace_fp;
 
 static char uudbg[40];
 
+int bptree_search_kv(bptree_session *bps, void *k,
+		int32_t ksize, void *v, int32_t vsize);
 static int bptree_search_recursive(bptree_session *bps,
 		bptree_node* n, bptree_key_val *kv);
 static int bptree_insert_nonfull(bptree_session *bps,
@@ -206,6 +208,30 @@ bptree_meta_node * create_bptree_or_reset(bptree_session *bps, int *rv)
 	free(root);
 	return read_meta_node(bps, rv);
 
+}
+
+int bptree_search_kv(bptree_session *bps, void *k,
+		int32_t ksize, void *v, int32_t vsize)
+{
+	int rv;
+	bptree_node *root;
+	bptree_meta_node *bpm;
+	bptree_key_val kv;
+	kv.k = k;
+	kv.v = v;
+	kv.ksize = ksize;
+	kv.vsize = vsize;
+
+	if (ksize <= 0 || ksize >= 65000) return BPTREE_OP_INVALID_INPUT;
+	
+	rv = bptree_read_root(bps, &bpm, &root);
+	if (rv != BPTREE_OP_NODE_FOUND) return rv;
+
+	rv = bptree_search_recursive(bps, root, &kv);
+
+	free_node(&root);
+	free_meta_node(&bpm);
+	return rv;
 }
 
 int bptree_search(bptree_session *bps, void *k,
@@ -483,7 +509,7 @@ int write_3_nodes(bptree_session *bps, bptree_node *n1,
 	return BPTREE_OP_SUCCESS;
 }
 // Wrapper for main compar() method but using key/val structs
-inline int bptree_compar_keys(bptree_session *bps,
+int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2)
 {
 	return bptree_compar(bps, kv1->k, kv2->k, kv1->v, kv2->v,
@@ -492,7 +518,7 @@ inline int bptree_compar_keys(bptree_session *bps,
 }
 
 // TODO Refactor
-inline int bptree_compar_to_node(bptree_session *bps,
+int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos)
 {
 	char nb = '\0';
@@ -539,8 +565,6 @@ void free_key_val(bptree_key_val **kv)
 // A generalization of the old compar function we used, but incorporating the
 // information we have provided about what fields are present and their
 // individual compar functions
-// TODO In order for non-unique secondary keys to work, we have to also compare
-// the values; this is a bit clunky now and probably should be rethought a bit
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields)
@@ -550,7 +574,6 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 	const unsigned char *a1 = k1;
 	const unsigned char *a2 = k2;
 	offset = 0;
-	//for (i = 1; i <= bps->num_fields; i++)
 	for (i = 1; i <= tot_fields; i++)
 	{
 		const void *u = a1 + offset;
@@ -561,14 +584,19 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		offset += bf->f_sz;
 		bf++;
 	}
-
-	// Key is the same; return whether the values are the same
-	if (vsize1 != vsize2) return (vsize1 < vsize2) ? -1 : 1;
-	return memcmp(v1, v2, vsize1);
+	
+	// Keypart is the same; return whether the values are the same
+	if(bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
+	{
+		return 0;
+	} 
+	else 
+	{
+		if (vsize1 != vsize2) return (vsize1 < vsize2) ? -1 : 1;
+		return memcmp(v1, v2, vsize1);
+	}
 }
 
-// TODO This method will only update ONE value for the given key, so it is
-// only is appropriate for primary-key based updates
 static int bptree_update_recursive(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv)
 {
@@ -630,7 +658,14 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	if (ksize <= 0 || ksize >= 65000
 		|| vsize <= 0 || vsize >= 65000) return BPTREE_OP_INVALID_INPUT;
 	
-	rv = bptree_search(bps, k, ksize, _val, &_vsize);
+	if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
+	{
+		rv = bptree_search(bps, k, ksize, _val, &_vsize);
+	}
+	else if (bps->insert_flags == BPTREE_INSERT_ALLOW_DUPES)
+	{
+		rv = bptree_search_kv(bps, k, ksize, v, vsize);
+	}
 	
 	// Search will set a cursor position, but we need to clear this since
 	// it could lead to index_next being successfully called when it shouldn't
@@ -641,12 +676,9 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	kv.ksize = ksize;
 	kv.vsize = vsize;
 	
-	if (rv == BPTREE_OP_KEY_FOUND 
-		&& bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
-		return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
+	if (rv == BPTREE_OP_KEY_FOUND ) return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 
-	if(! (rv == BPTREE_OP_KEY_NOT_FOUND ||
-		rv == BPTREE_OP_KEY_FOUND)) return rv;
+	if(rv != BPTREE_OP_KEY_NOT_FOUND) return rv;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
@@ -1631,7 +1663,6 @@ int is_valid_traversal(bptree_session *bps, bptree_node *p, bptree_node *c,int i
 		rv = bptree_compar_keys(bps, &p_kv, &c_kv);
 		if (rv <= 0) return -2;
 		else return 0;
-		
 	}
 	else
 	{
@@ -1641,19 +1672,13 @@ int is_valid_traversal(bptree_session *bps, bptree_node *p, bptree_node *c,int i
 		rv = bptree_compar_keys(bps, &p_kv, &c_kv);
 	}
 	
-	if (bpnode_is_leaf(c))
+	if (bpnode_is_leaf(c) && rv != 0)
 	{
-		if (bpnode_is_active(p,pos) && rv != 0) {
-			return -3;
-		}
-		else if (!bpnode_is_active(p,pos) && rv >= 0) 
-		{
-			return -4;
-		}
+		return -3;
 	}
-	else
+	else if (!bpnode_is_leaf(c) && rv >= 0)
 	{
-		if (rv >= 0) return -5;
+		return -5;
 	}
 
 	return 0;

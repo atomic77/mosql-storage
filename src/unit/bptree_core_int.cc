@@ -162,9 +162,96 @@ protected:
 		
 	}
 	
-	
+	vector<int> retrieveKeysViaScan() {
+		vector<int> keys(0);
+		int rv;
+		rv = bptree_index_first_no_key(bps);
+		for (;;) {
+			rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+			if (rv != BPTREE_OP_KEY_FOUND) break;
+			keys.push_back(k);
+		}
+		return keys;
+	}
+	vector<int> retrieveValuesViaScan() {
+		vector<int> values(0);
+		int rv;
+		rv = bptree_index_first_no_key(bps);
+		for (;;) {
+			rv = bptree_index_next(bps, &k, &ksize, &v, &vsize);
+			if (rv != BPTREE_OP_KEY_FOUND) break;
+			values.push_back(v);
+		}
+		return values;
+	}
 };
 
+TEST_F(BptreeCoreIntTest, ElemComparUniq) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_UNIQUE_KEY, 1);
+	bptree_key_val kv1, kv2;
+	
+	int k1 = 10, k2 = 15, v1 = 1000, v2 = 105;
+	kv1.k = (unsigned char *)&k1;
+	kv1.v = (unsigned char *)&v1;
+	kv2.k = (unsigned char *)&k2;
+	kv2.v = (unsigned char *)&v2;
+	kv1.ksize = kv1.vsize = kv2.ksize = kv2.vsize = sizeof(int);
+	
+	int rv;
+	rv = bptree_compar_keys(bps, &kv1, &kv1);
+	EXPECT_TRUE(rv == 0);
+	
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv < 0);
+	
+	rv = bptree_compar_keys(bps, &kv2, &kv1);
+	EXPECT_TRUE(rv > 0);
+	
+	k1 = k2 = 100; // same key diff value
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv == 0);
+	
+	v1 = v2 = 1000; // same key diff value
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv == 0);
+}
+
+TEST_F(BptreeCoreIntTest, ElemComparWithDupes) {
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES, 1);
+	bptree_key_val kv1, kv2;
+	
+	int k1 = 10, k2 = 15, v1 = 1000, v2 = 105;
+	kv1.k = (unsigned char *)&k1;
+	kv1.v = (unsigned char *)&v1;
+	kv2.k = (unsigned char *)&k2;
+	kv2.v = (unsigned char *)&v2;
+	kv1.ksize = kv1.vsize = kv2.ksize = kv2.vsize = sizeof(int);
+	
+	int rv;
+	rv = bptree_compar_keys(bps, &kv1, &kv1);
+	EXPECT_TRUE(rv == 0);
+	
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv < 0);
+	
+	rv = bptree_compar_keys(bps, &kv2, &kv1);
+	EXPECT_TRUE(rv > 0);
+	
+	k1 = k2 = 100; // same key diff value
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv > 0);
+	
+	v1 = v2 = 1000; // same key diff value
+	rv = bptree_compar_keys(bps, &kv1, &kv2);
+	EXPECT_TRUE(rv == 0);
+}
 
 TEST_F(BptreeCoreIntTest, DeleteElement) {
 	int rv, pos, num_elem = 7;
@@ -298,34 +385,7 @@ TEST_F(BptreeCoreIntTest, DeleteOnConditionAndScan) {
 		i++;
 	} 
 	
-	rv = bptree_index_first(bps, &k2, &k2_sz, &v2, &v2_sz);
-	while(rv != BPTREE_OP_EOF)
-	{
-		post_del_select.push_back(k2);
-		rv = bptree_index_next(bps, &k2, &k2_sz, &v2, &v2_sz);
-	}
-	
-	printf("Inserted: ");
-	for (int i : inserted ) 
-	{
-		printf("%d ", i);
-	}
-	printf("\nSelected: ");
-	for (int s : selected ) 
-	{
-		printf("%d ", s);
-	}
-	printf("\nDeleted: ");
-	for (int d : deleted ) 
-	{
-		printf("%d ", d);
-	}
-	printf("\nPost-del select: ");
-	for (int s : post_del_select ) 
-	{
-		printf("%d ", s);
-	}
-	printf("\n");
+	post_del_select = retrieveKeysViaScan();
 	
 	EXPECT_EQ(inserted.size(), n);
 	EXPECT_EQ(selected.size(), n);
@@ -345,6 +405,40 @@ TEST_F(BptreeCoreIntTest, DeleteOnConditionAndScan) {
 	
 }
 
+TEST_F(BptreeCoreIntTest, InsertMoreKeyDupesThanNodeSize) {
+	
+	bps = mockBptreeSessionCreate();
+	createNewMockSession(1000,
+			     BPTREE_OPEN_OVERWRITE,
+			     BPTREE_INSERT_ALLOW_DUPES, 1);
+	
+	int n = BPTREE_NODE_SIZE * 3;
+	k = 23;
+	for(int i= 1; i <= n; i++) {
+		v = i + 100;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_ERR_DUPLICATE_KEY_INSERTED);
+	}
+	if (DBUG) {
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	}
+	
+	vector<int> keys_post = retrieveKeysViaScan();
+	vector<int> values_post = retrieveValuesViaScan();
+	EXPECT_EQ(keys_post.size(), n);
+	EXPECT_EQ(values_post.size(), n);
+	
+	for(int i= 1; i <= n; i++) {
+		v = i + 100;
+		EXPECT_EQ(keys_post[i-1], k);
+		EXPECT_EQ(values_post[i-1], v);
+	}
+}
+
+
 TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesForward) {
 	
 	bps = mockBptreeSessionCreate();
@@ -361,8 +455,10 @@ TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesForward) {
 			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 		}
 	}
-	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
-	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	if (DBUG) {
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	}
 	
 	for(int i= 1; i <= n; i++) {
 		k = i*100;
@@ -394,9 +490,11 @@ TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesReverse) {
 			EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 		}
 	}
-	uuid_t nn;
-	bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
-	bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	if (DBUG) {
+		uuid_t nn;
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_RECURSIVELY, nn);
+		bptree_debug(bps, BPTREE_DEBUG_DUMP_GRAPHVIZ, nn);
+	}
 	
 	for(int i= n; i >= 1; i--) {
 		k = i*100;
@@ -729,6 +827,95 @@ TEST_F(BptreeCoreIntTest, MoreThanOneNodeInsert) {
 		EXPECT_EQ(vsize, sizeof(v));
 		EXPECT_EQ(v, r*10000);
 	}
+}
+
+TEST_F(BptreeCoreIntTest, InsertUpdateScan) {
+	int n = 10 * BPTREE_NODE_SIZE;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*30000;
+		rv = bptree_update(bps, &k, sizeof(k), &v, sizeof(v)); 
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	vector<int> keys = retrieveKeysViaScan();
+	vector<int> values = retrieveValuesViaScan();
+	EXPECT_EQ(keys.size(), n);
+	EXPECT_EQ(values.size(), n);
+	for(int i= 0; i < n; i++) {
+		EXPECT_EQ(keys[i], i*100);
+		EXPECT_EQ(values[i], i*30000);
+	}
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+}
+
+TEST_F(BptreeCoreIntTest, InsertDeleteRandomScan) {
+	int n = 20 * BPTREE_NODE_SIZE;
+	int *arr = init_new_int_array(n);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	for(int i= 0; i < n; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*10000;
+		rv = bptree_insert(bps, &k, sizeof(k), &v, sizeof(v));
+		EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	}
+	
+	vector<int> keys_pre = retrieveKeysViaScan();
+	vector<int> values_pre = retrieveValuesViaScan();
+	vector<int> keys_del(0);
+	vector<int> values_del(0);
+	gsl_ran_shuffle(rng, arr, n, sizeof(int));
+	int d = gsl_rng_uniform_int(rng, n);
+	for(int i= 0; i < d; i++) {
+		int r = arr[i];
+		k = r*100;
+		v = r*30000;
+		keys_del.push_back(k);
+		values_del.push_back(v);
+		rv = bptree_delete(bps, &k, sizeof(k), &v, sizeof(v)); 
+		EXPECT_EQ(rv, BPTREE_OP_KEY_FOUND);
+	}
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	
+	vector<int> keys_post = retrieveKeysViaScan();
+	vector<int> values_post = retrieveValuesViaScan();
+	EXPECT_EQ(keys_post.size(), n-d);
+	EXPECT_EQ(values_post.size(), n-d);
+	
+	for(int i= 0; i < n-d-1; i++) {
+		EXPECT_TRUE(keys_post[i] < keys_post[i+1]);
+	}
+	
+	set<int> elem;
+	
+	set_intersection(keys_del.begin(), keys_del.end(),
+			 keys_post.begin(), keys_post.end(),
+			 inserter(elem, elem.end()));
+	EXPECT_EQ(elem.size(), 0);
+	
+	uuid_clear(nn);
+	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
+	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
 }
 
 TEST_F(BptreeCoreIntTest, InsertUpdateSearch) {
