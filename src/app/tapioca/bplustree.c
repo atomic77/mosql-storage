@@ -1672,7 +1672,7 @@ int is_valid_traversal(bptree_session *bps, bptree_node *p, bptree_node *c,int i
 		rv = bptree_compar_keys(bps, &p_kv, &c_kv);
 	}
 	
-	if (bpnode_is_leaf(c) && rv != 0)
+	if (bpnode_is_leaf(c) && rv > 0)
 	{
 		return -3;
 	}

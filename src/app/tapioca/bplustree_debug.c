@@ -372,6 +372,16 @@ verify_bptree_recursive_read(bptree_session *bps,bptree_node *n,
 			bptree_node *child;
 			bptree_key_val *kv;
 			child = read_node(bps,bpnode_get_child_id(n, c), &rv2);
+			int rv3 = is_valid_traversal(bps, n, child, c);
+			if (rv3 != 0) {
+				
+				printf ("Caught invalid traversal pos %d!\n", c);
+				dump_node_info(bps,n);
+				printf("\nchild:\n");
+				dump_node_info(bps,child);
+				*rv = rv3;
+				return NULL;
+			}
 			if (rv2 != BPTREE_OP_NODE_FOUND)
 			{
 				*rv = rv2;
