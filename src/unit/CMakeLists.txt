@@ -15,7 +15,7 @@ SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive -std=c++0x")
 add_executable(mosql_gtest_main test_helpers.cc storage_unittest.cc 
 	vset_unittest.cc transaction_unittest.cc tapioca_unittest.cc remote_mock.c 
 	dump_unittest.cc contention_unittest.cc 
-	bptree_basic_unittest.cc bptree_interface_unittest.cc bptree_concurrent_unittest.cc
+	bptree_core.cc bptree_core_int.cc bptree_interface_unittest.cc bptree_concurrent_unittest.cc
 	)
 
 target_link_libraries(mosql_gtest_main gtest bplustree tapioca tapiocadb ${TAPIOCA_LINKER_LIBS} ${PAXOS_LINKER_LIBS} ${LIBUUID_LIBRARIES} ${MSGPACK_LIBRARIES} ${GSL_LIBRARIES} ${GTEST_LIBRARIES} ) 
