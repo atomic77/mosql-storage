@@ -232,7 +232,7 @@ TEST_F(BptreeCoreTest, FindElementInNode) {
 	copy_key_val_to_node(n, &kv, 3);
 	EXPECT_EQ(k, *(int *)bpnode_get_key(n, 3));
 	
-	dump_node_info(bps, n);
+	if (DBUG) dump_node_info(bps, n);
 	rv = is_node_ordered(bps, n);
 	EXPECT_EQ(rv, 0);
 	
@@ -312,7 +312,7 @@ TEST_F(BptreeCoreTest, FindPartialElementInNode) {
 	write_pair_to_buf(kbuf, 300, 1);
 	copy_key_val_to_node(n, &kv, 4);
 	
-	dump_node_info(bps, n);
+	if (DBUG) dump_node_info(bps, n);
 	rv = is_node_ordered(bps, n);
 	EXPECT_EQ(rv, 0);
 	

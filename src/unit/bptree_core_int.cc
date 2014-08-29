@@ -26,6 +26,11 @@ protected:
 	
 	}
 	
+	virtual void TearDown() {
+		freeSession();
+		gsl_rng_free(rng);
+	}
+	
 	bptree_node * makeIncrementalBptreeNode(bptree_session *bps, 
 						int start, int end,
 						int num_elem) 
@@ -188,6 +193,7 @@ protected:
 
 TEST_F(BptreeCoreIntTest, ElemComparUniq) {
 	
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
@@ -221,6 +227,7 @@ TEST_F(BptreeCoreIntTest, ElemComparUniq) {
 }
 
 TEST_F(BptreeCoreIntTest, ElemComparWithDupes) {
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
@@ -407,6 +414,7 @@ TEST_F(BptreeCoreIntTest, DeleteOnConditionAndScan) {
 
 TEST_F(BptreeCoreIntTest, InsertMoreKeyDupesThanNodeSize) {
 	
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
@@ -441,6 +449,7 @@ TEST_F(BptreeCoreIntTest, InsertMoreKeyDupesThanNodeSize) {
 
 TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesForward) {
 	
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
@@ -476,6 +485,7 @@ TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesForward) {
 
 TEST_F(BptreeCoreIntTest, DeleteFromNonTrivialTreeWithDupesReverse) {
 	
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,
@@ -560,6 +570,9 @@ TEST_F(BptreeCoreIntTest, ConcatUnderflowLeaf) {
 	EXPECT_EQ(is_node_ordered(bps,cl), 0);
 	// Since this is a leaf, the split key was already there
 	EXPECT_EQ(bpnode_size(cl), BPTREE_NODE_MIN_SIZE * 2 - 1);
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 }
 
 TEST_F(BptreeCoreIntTest, ConcatUnderflowNonLeaf) {
@@ -595,6 +608,9 @@ TEST_F(BptreeCoreIntTest, ConcatUnderflowNonLeaf) {
 	EXPECT_EQ(is_node_ordered(bps,cl), 0);
 	EXPECT_EQ(bpnode_size(cl), BPTREE_NODE_MIN_SIZE * 2);
 	
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 }
 	
 TEST_F(BptreeCoreIntTest, SplitOverflowNonLeaf) {
@@ -646,6 +662,10 @@ TEST_F(BptreeCoreIntTest, SplitOverflowNonLeaf) {
 	EXPECT_EQ(uuid_compare(bpnode_get_child_id(p,0), bpnode_get_id(cl)), 0);
 	EXPECT_EQ(uuid_compare(bpnode_get_child_id(p,1), bpnode_get_id(cr1)), 0);
 	EXPECT_EQ(uuid_compare(bpnode_get_child_id(p,2), bpnode_get_id(cr2)), 0);
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr1);
+	free_node(&cr2);
 }
 
 TEST_F(BptreeCoreIntTest, SplitOverflowLeaf) {
@@ -689,6 +709,10 @@ TEST_F(BptreeCoreIntTest, SplitOverflowLeaf) {
 	EXPECT_EQ(uuid_compare(bpnode_get_next_id(cl), bpnode_get_id(cr1)), 0);
 	EXPECT_EQ(uuid_compare(bpnode_get_next_id(cr1), bpnode_get_id(cr2)), 0);
 	
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr1);
+	free_node(&cr2);
 }
 
 TEST_F(BptreeCoreIntTest, RedistUnderflowNonLeaf) {
@@ -707,6 +731,9 @@ TEST_F(BptreeCoreIntTest, RedistUnderflowNonLeaf) {
 		
 	miniTreeSanityChecks(p,cl,cr);
 	
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 	///////////////////////////////////////////////////////////////
 	// Left-to-right transfer 
 	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE + 1, 
@@ -734,6 +761,9 @@ TEST_F(BptreeCoreIntTest, RedistUnderflowNonLeaf) {
 		
 		
 	miniTreeSanityChecks(p,cl,cr);
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 }
 	
 TEST_F(BptreeCoreIntTest, RedistUnderflowLeaf) {
@@ -766,6 +796,9 @@ TEST_F(BptreeCoreIntTest, RedistUnderflowLeaf) {
 		
 	miniTreeSanityChecks(p,cl,cr);
 		
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 	///////////////////////////////////////////////////////////////
 	// Left-to-right transfer 
 	createMiniTree(&p, &cl, BPTREE_NODE_MIN_SIZE + 1, 
@@ -778,6 +811,9 @@ TEST_F(BptreeCoreIntTest, RedistUnderflowLeaf) {
 	EXPECT_TRUE(bpnode_size(cr) == BPTREE_NODE_MIN_SIZE);
 		
 	miniTreeSanityChecks(p,cl,cr);
+	free_node(&p);
+	free_node(&cl);
+	free_node(&cr);
 }
 	
 TEST_F(BptreeCoreIntTest, InsertToFull) {
@@ -916,6 +952,7 @@ TEST_F(BptreeCoreIntTest, InsertDeleteRandomScan) {
 	uuid_clear(nn);
 	rv = bptree_debug(bps, BPTREE_DEBUG_VERIFY_RECURSIVELY, nn);
 	EXPECT_EQ(rv, BPTREE_OP_SUCCESS);
+	free(arr);
 }
 
 TEST_F(BptreeCoreIntTest, InsertUpdateSearch) {
@@ -1059,6 +1096,7 @@ TEST_F(BptreeCoreIntTest, CursorPartialKey) {
 	int n = 3 * BPTREE_NODE_SIZE;
 	int n_2 = 3; // number of second-level keys
 	unsigned char kbuf[sizeof(int)*2];
+	freeSession();
 	bps = mockBptreeSessionCreate();
 	createNewMockSession(1000,
 			     BPTREE_OPEN_OVERWRITE,

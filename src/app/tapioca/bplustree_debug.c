@@ -63,6 +63,7 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 	if (bpnode_is_leaf(root)  && bpnode_is_empty(root))
 	{
 		// Btree is empty
+		free_node(&root);
 		return BPTREE_OP_SUCCESS;
 	}
 
@@ -108,6 +109,7 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 				printf("Recursive check failed!\n");
 				fflush(stdout);
 			}
+			free_key_val(&kvmax);
 			break;
 		case BPTREE_DEBUG_DUMP_SEQUENTIALLY:
 			rv = dump_bptree_sequential(bps, data);
@@ -124,6 +126,8 @@ int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 			break;
 	}
 
+	free_meta_node(&bpm);
+	free_node(&root);
 	if (rv != BPTREE_OP_SUCCESS) 
 		printf ("Debug type %d failed with code %d\n",debug_opt,rv);
 	return rv;

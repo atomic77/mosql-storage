@@ -204,6 +204,7 @@ int is_node_ordered(bptree_session *bps, bptree_node* y);
 int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
 int is_node_sane(bptree_node *n);
 int is_correct_node(bptree_node *n, uuid_t node_key);
+void bptree_free_session(bptree_session **bps);
 
 int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);

@@ -154,8 +154,14 @@ protected:
 		bps = mockBptreeSessionCreate();
 		//DBUG = false;
 	}
+	 
+	void freeSession() {
+		transaction_destroy(bps->t);
+		free(bps);
+	}
 	
 	virtual void TearDown() {
+		freeSession();
 	}
 
 };

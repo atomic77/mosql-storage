@@ -158,6 +158,13 @@ int bptree_set_active_bpt_id(bptree_session *bps, tapioca_bptree_id bpt_id)
 	return BPTREE_OP_SUCCESS;
 }
 
+void bptree_free_session(bptree_session **bps)
+{
+	free((*bps)->bfield);
+	transaction_destroy((*bps)->t);
+	*bps = NULL;
+}
+
 int bptree_set_num_fields(bptree_session *bps, int16_t num_fields)
 {
 	if (num_fields > BPTREE_MAX_NUMBER_FIELDS) return BPTREE_OP_INVALID_INPUT;
@@ -244,6 +251,7 @@ int bptree_search(bptree_session *bps, void *k,
 	kv.k = k;
 	kv.v = v;
 	kv.ksize = ksize;
+	kv.vsize = 0;
 
 	if (ksize <= 0 || ksize >= 65000) return BPTREE_OP_INVALID_INPUT;
 	
@@ -407,9 +415,10 @@ int rebalance_nodes(bptree_session *bps, bptree_node *p,
 		bpnode_clear_parent(cl);
 	}
 	
-	return write_3_nodes(bps, p,cl,cr);
+	rv = write_3_nodes(bps, p,cl,cr);
+	free_node(&adj);
 	
-	return BPTREE_OP_SUCCESS;
+	return rv;
 }
 
 /* When we redistribute keys, we need to ensure that the cursor has been 
@@ -590,10 +599,14 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 	{
 		return 0;
 	} 
-	else 
+	else if (tot_fields == bps->num_fields)
 	{
 		if (vsize1 != vsize2) return (vsize1 < vsize2) ? -1 : 1;
 		return memcmp(v1, v2, vsize1);
+	}
+	else
+	{
+		return res;
 	}
 }
 
@@ -706,6 +719,7 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 		//assert(uuid_compare(newroot->self_key, root->parent) == 0);
 		//assert(uuid_compare(newroot->self_key, bpm->root_key) == 0);
 		free_node(&newroot);
+		free_node(&root_sibling);
 	}
 	else
 	{
@@ -968,11 +982,10 @@ static int bptree_insert_nonfull(bptree_session *bps,
 	}
 	else
 	{
-		bptree_node *n = NULL, *insert_to;
+		bptree_node *n = NULL; 
 
 		n = read_node(bps, bpnode_get_child_id(x,c_pos), &rv2);
 		if (rv2 != BPTREE_OP_NODE_FOUND) return rv2;
-		insert_to = n;
 
 		if (bpnode_is_full(n))
 		{
@@ -982,11 +995,20 @@ static int bptree_insert_nonfull(bptree_session *bps,
 			if (rv2 != BPTREE_OP_SUCCESS) return rv2;
 			if(bptree_compar_to_node(bps, x, kv, c_pos) < 0) 
 			{
-				insert_to = sp_node;
+				rv = bptree_insert_nonfull(bps, sp_node, kv, lvl+1);
 			}
+			else
+			{
+				rv = bptree_insert_nonfull(bps, n, kv, lvl+1);
+			}
+			free_node(&sp_node);
 		}
+		else
+		{
 
-		rv = bptree_insert_nonfull(bps, insert_to, kv, lvl+1);
+			rv = bptree_insert_nonfull(bps, n, kv, lvl+1);
+		}
+		
 		free_node(&n);
 		return rv;
 	}
@@ -1060,6 +1082,7 @@ int bptree_index_next(bptree_session *bps, void *k,
 			read_node(bps, bpnode_get_id(bps->cursor_node), &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
 		cache_node_in_session(bps, c);
+		free_node(&c);
 	}
 
 	bptree_key_val kv;
