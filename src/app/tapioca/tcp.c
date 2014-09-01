@@ -42,6 +42,7 @@
 #include "hash.h"
 #include "hashtable.h"
 #include "bplustree.h"
+#include "tapiocadb.h"
 
 
 typedef struct tcp_client_t {
@@ -179,7 +180,6 @@ int tcp_init(int port) {
 	if (rv < 0) return -1;
 	clients = create_hashtable(256, hash_from_key, key_equal, free);
 	if (clients == NULL) return -1;
-	// Alex: Add initialization of client-bpt map here
 	client_bpt_ids =
 			create_hashtable(256, hash_from_client_bpt_key, client_bpt_id_cmp,free);
 	if (client_bpt_ids == NULL) return -1;
@@ -228,7 +228,9 @@ static void on_accept(int fd, short ev, void *arg) {
 	
 	setnonblock(c->fd); // TODO check return value
 	
-	c->buffer_ev = bufferevent_new(c->fd, on_read, on_write, on_error, c);
+	c->buffer_ev = bufferevent_socket_new(tapioca_get_event_base(), c->fd,
+		BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_setcb(c->buffer_ev, on_read, on_write, on_error, c);
 	bufferevent_enable(c->buffer_ev, EV_READ);
 	c->write_count = 0;
 }
@@ -311,6 +313,7 @@ static void handle_close(tcp_client* c, struct evbuffer* b) {
 	evbuffer_add(rep, &rv, sizeof(int));
 	bufferevent_write_buffer(c->buffer_ev, rep);
 	evbuffer_free(rep);
+	tcp_client_remove(c);
 }
 
 

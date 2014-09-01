@@ -52,6 +52,26 @@ TEST_F(BptreeInterfaceTest, TestRandomBatchedInsert)
 	}
 }
 
+TEST_F(BptreeInterfaceTest, TestConnectionLeak)
+{
+	tapioca_handle *t;
+	int k, v;
+	k = v = 123;
+	// Assume default of 1024
+	for (int i = 1; i < 1536; i++) {
+		t = tapioca_open(hostname, port);
+		EXPECT_NE(th, (tapioca_handle*)NULL);
+		createNewTree(i);
+		tapioca_bptree_set_num_fields(th, tbpt_id, 1);
+		tapioca_bptree_set_field_info(th, tbpt_id, 0, sizeof(int32_t), 
+					      BPTREE_FIELD_COMP_INT_32);
+		rv = tapioca_bptree_insert(th, tbpt_id, &k, sizeof(int), 
+						&v, sizeof(int));
+		ASSERT_EQ(rv, BPTREE_OP_SUCCESS);
+		tapioca_close(t);
+	}
+}
+
 TEST_F(BptreeInterfaceTest, TestUpdate)
 {
 	int i, j, n, r, sz;
