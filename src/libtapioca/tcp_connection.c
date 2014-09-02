@@ -112,10 +112,22 @@ on_read(struct bufferevent *bev, void *arg) {
 
 
 static void
-on_error(struct bufferevent *bev, short what, void *arg) {
-	printf("tcp connection error %d\n", what);
+on_error(struct bufferevent *bev, short events, void *arg) {
+	int disconnect = 0;
 	tcp_connection* c = (tcp_connection*)arg;
-	c->error = what;
+	c->error = events;
+	if (events & BEV_EVENT_EOF) {
+		//printf("TAPIOCA CLIENT: Closing socket fd %d.\n", c->sock); 
+		disconnect  = 1;
+	}
+	if (events & BEV_EVENT_ERROR) {
+		printf("Got an error from sock fd %d\n");
+		//c->sock, evutil_socket_error_to_string());
+		disconnect  = 1;
+	}
+	if (disconnect)  {
+		bufferevent_free(bev);
+	}
 }
 
 
@@ -139,7 +151,6 @@ tcp_connection_new(const char* address, int port) {
 
 void
 tcp_connection_free(tcp_connection* c) {
-	close(c->sock);
 	event_base_free(c->base);
 	free(c);
 }

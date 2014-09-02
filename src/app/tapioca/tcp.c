@@ -313,7 +313,7 @@ static void handle_close(tcp_client* c, struct evbuffer* b) {
 	evbuffer_add(rep, &rv, sizeof(int));
 	bufferevent_write_buffer(c->buffer_ev, rep);
 	evbuffer_free(rep);
-	tcp_client_remove(c);
+	tcp_client_remove(c->id);
 }
 
 
