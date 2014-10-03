@@ -34,8 +34,8 @@ protected:
     bptree_session *bps;
 	tapioca_bptree_id tbpt_id;
 	int rv, rv1, rv2, keys;
-	char k[LARGE_BUFFER_SZ];
-	char v[LARGE_BUFFER_SZ];
+	char k[512];
+	char v[512];
 	int32_t ksize, vsize;
 	const char *hostname;
 	int port;
@@ -84,8 +84,8 @@ protected:
 			system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
 			sleep(1);
 		}
-		memset(k, 0,LARGE_BUFFER_SZ);
-		memset(v, 0,LARGE_BUFFER_SZ);
+		memset(k, 0,512);
+		memset(v, 0,512);
 		hostname = "127.0.0.1";
 		port = 5555;
 		keys = 1000;
@@ -110,9 +110,9 @@ protected:
         tapioca_close(th);
 		if (local_storage) 
 		{
-			system("killall -q cm tapioca example_acceptor example_proposer rec");
+			system("killall -q cm tapioca example_acceptor example_proposer rec gdb");
 			sleep(2);
-			system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+			system("killall -q -9 cm tapioca example_acceptor example_proposer rec gdb");
 		}
 	}
 
