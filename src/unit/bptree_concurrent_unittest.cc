@@ -87,6 +87,19 @@ protected:
 		}
 		return valuevect;
 	}
+	bool verifyKeys(vector<string> keyvect, int start, int end) {
+		
+		char kk[10] = "aaaaaaaaa";
+		int idx = 0;
+		for (int i = start; i < end; i++ ) {
+			sprintf(kk, "a%08d", i);
+			string st = keyvect[idx];
+			if (st.compare(kk) != 0) return false;
+			idx++;
+		}
+		
+		return true;
+	}
 };
 
 class BptreeMultiNodeTest : public BptreeConcurrencyTest {
@@ -639,27 +652,29 @@ TEST_F(BptreeMultiNodeTest, TestSimpleMultiCacheNodes)
 	int k, v, rv, ksz, vsz;
 	k = v = 1234;
 	
-	int nodes = 2;
-	num_threads = nodes * 1;
-	keys = 10;
+	int nodes = 4;
+	num_threads = nodes * 3;
+	keys = 50;
+	DBUG = true;
 	
-	tapioca_bptree_set_num_fields(th, tbpt_id, 1);
-	tapioca_bptree_set_field_info(th, tbpt_id, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
-	rv = tapioca_bptree_insert(th, tbpt_id, &k, sizeof(int), &v, sizeof(int));
-	EXPECT_EQ(BPTREE_OP_SUCCESS, rv);
+	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, seed,
+			BPTREE_OPEN_ONLY, BPTREE_INSERT_UNIQUE_KEY);
+	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
+	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
 	rv = tapioca_commit(th);
 	EXPECT_GE(0, rv);
 	
 	tapioca_handle **thandles = (tapioca_handle **)
 		malloc(sizeof(tapioca_handle*) * nodes);
+	threads = (pthread_t *) malloc(sizeof(pthread_t) * num_threads);
 	for (int i = 0; i< nodes; i++) {
 		addCacheNode(i+1);
 		thandles[i] = tapioca_open(hostname, 5556+i);
 		ASSERT_TRUE(thandles[i] != NULL);
-		rv = tapioca_bptree_initialize_bpt_session_no_commit(thandles[i], tbpt_id, BPTREE_OPEN_ONLY, 
-						BPTREE_INSERT_UNIQUE_KEY, 2);
-		tapioca_bptree_set_num_fields(thandles[i], tbpt_id, 1);
-		tapioca_bptree_set_field_info(thandles[i], tbpt_id, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
+		//rv = tapioca_bptree_initialize_bpt_session_no_commit(thandles[i], tbpt_id, BPTREE_OPEN_ONLY, 
+			//			BPTREE_INSERT_UNIQUE_KEY, 2);
+		//tapioca_bptree_set_num_fields(thandles[i], tbpt_id, 1);
+		//tapioca_bptree_set_field_info(thandles[i], tbpt_id, 0, sizeof(int32_t), BPTREE_FIELD_COMP_INT_32);
 	}
 	
 	
@@ -708,13 +723,87 @@ TEST_F(BptreeMultiNodeTest, TestSimpleMultiCacheNodes)
 		rv = pthread_join(threads[i], NULL);
 	}
 
-	printf("Press a key to finish...\n");
+	//printf("Press a key to finish...\n");
 	//getc(stdin);
 	
 	vector<string> kvec = retrieveKeysViaScan(th, tbpt_id);
 	EXPECT_EQ(kvec.size(), num_threads * keys);
 	vector<string> vvec = retrieveValuesViaScan(th, tbpt_id);
 	EXPECT_EQ(vvec.size(), num_threads * keys);
+	
+	v = 0;
+	
+}
+
+TEST_F(BptreeMultiNodeTest, TestInterleavedCacheAddition)
+{
+	int k, v, rv, ksz, vsz;
+	k = v = 1234;
+	
+	int nodes = 4;
+	num_threads = nodes * 1;
+	keys = 2000;
+	DBUG = true;
+	
+	// Launch first memory-based node
+	tapioca_bptree_id tbpt_id = tapioca_bptree_initialize_bpt_session(th, seed,
+			BPTREE_OPEN_ONLY, BPTREE_INSERT_UNIQUE_KEY);
+	tapioca_bptree_set_num_fields(th,tbpt_id, 1);
+	tapioca_bptree_set_field_info(th,tbpt_id, 0, 10, BPTREE_FIELD_COMP_STRNCMP);
+	rv = tapioca_commit(th);
+	EXPECT_GE(0, rv);
+	
+	thread_config s; // base config
+	s.start_key = 0;
+	s.seed = seed;
+	s.dbug = dbug;
+	s.keys = keys;
+	s.thread_id = 0;
+	s.hostname = hostname;
+	s.port = 5555;
+	s.strict = true;
+		
+	pthread_t thdbase; // = (pthread_t *) malloc(sizeof(pthread_t));
+	rv = pthread_create(&thdbase, NULL, thr_tapioca_bptree_insert_test, &s);
+	
+	pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * num_threads);
+	for (int i = 1; i <= nodes; i++) {
+		addCacheNode(i);
+		tapioca_handle *th1 = NULL;
+		int connects = 10;
+		while (th1 == NULL && connects > 0)
+		{
+			usleep(500 * 1000);
+			th1 = tapioca_open(hostname, 5556);
+			connects--;
+		}
+		// Cache node is up and ready
+		ASSERT_TRUE(th1 != NULL);
+		pthread_t thd1 ; //= (pthread_t *) malloc(sizeof(pthread_t));
+		thread_config * s1 = (thread_config *) malloc(sizeof(thread_config));
+		memcpy(s1, &s, sizeof(s));
+		s1->thread_id = i;
+		s1->start_key = keys * i;
+		s1->port = 5555 + i;
+		rv = pthread_create(&(threads[i-1]), NULL, thr_tapioca_bptree_insert_test, s1);
+	}
+	
+	
+	
+	rv = pthread_join(thdbase, NULL);
+	for (int i = 0; i < nodes; i++) {
+		rv = pthread_join(threads[i], NULL);
+	}
+
+	printf("Threads complete, verifying data on \n");
+	//getc(stdin);
+	
+	vector<string> kvec = retrieveKeysViaScan(th, tbpt_id);
+	EXPECT_EQ(kvec.size(), (num_threads + 1)* keys);
+	bool res = verifyKeys(kvec, 0, (num_threads +1)*keys);
+	EXPECT_TRUE(res);
+	vector<string> vvec = retrieveValuesViaScan(th, tbpt_id);
+	EXPECT_EQ(vvec.size(), (num_threads + 1) * keys);
 	
 	v = 0;
 	
