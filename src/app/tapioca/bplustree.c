@@ -17,16 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-
- * Adapted from integer-based internal btree from tapioca sources
- *
- * This is a b+tree implementation that operates external to the tapioca
- * cluster and uses the basic get/put/commit API to provide b+tree functionality
- * Arbitrary binary data can be indexed provided that a pointer to a function
- * is provided for ordering (similar to qsort())
- */
 #include "bplustree.h"
+#include "bptree_node.h"
 #include "tcp.h"
 
 int file_opened =0;
@@ -34,55 +26,37 @@ FILE *trace_fp;
 
 static char uudbg[40];
 
+int bptree_search_kv(bptree_session *bps, void *k,
+		int32_t ksize, void *v, int32_t vsize);
 static int bptree_search_recursive(bptree_session *bps,
 		bptree_node* n, bptree_key_val *kv);
 static int bptree_insert_nonfull(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv, int lvl);
 static int bptree_update_recursive(bptree_session *bps,
 		bptree_node* x,bptree_key_val *kv);
-static int bptree_index_first_recursive(
-		bptree_session *bps, void *k, int32_t *ksize, void *v, int32_t *vsize,
-		bptree_node *n);
+static int bptree_index_first_recursive(bptree_session *bps,
+					bptree_key_val *kv, bptree_node *n);
 static int 
 bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv);
-static int bptree_split_child(bptree_session *bps,
-		bptree_node* x, int i, bptree_node* y, int lvl);
-static int node_is_full(bptree_node * n);
-//inline
 void * create_cell_key(bptree_session *bps, uuid_t cell_id, size_t *ksize);
 void * create_meta_key(bptree_session *bps, size_t *ksize);
 static void get_unique_key(bptree_session *bps, uuid_t uu);
 bptree_meta_node * create_bptree_or_reset(bptree_session *bps, int *rv);
-bptree_node * copy_node(bptree_node *n);
-int free_node(bptree_node **n);
-void free_meta_node(bptree_meta_node **m);
-int bptree_index_next_internal(bptree_session *bps, void *k,
-		int32_t *ksize, void *v, int32_t *vsize);
+int bptree_index_next_internal(bptree_session *bps, bptree_key_val *kv);
 
-// Assertion functions
 
-int is_bptree_node_sane(bptree_node* n);
-int are_key_and_value_sizes_valid(bptree_node* n);
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
-int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
-int is_node_sane(bptree_node *n);
-int is_correct_node(bptree_node *n, uuid_t node_key);
-
-int is_valid_traversal(bptree_session *bps, bptree_node *x,
-		bptree_node *n,int i);
-bptree_node * unmarshall_bptree_node_msgpack(const void *buf, size_t sz,
-		size_t *nsize);
 inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) ;
-//bptree_node * unmarshall_bptree_node_tpl(const void *buf, size_t sz,
-//		size_t *nsize);
 
+void traversal_check(bptree_session *bps, bptree_node *x, bptree_node *n,int i);
+void reposition_cursor_before_redistrib(bptree_session *bps, bptree_node *cl, 
+					bptree_node *cr);
 
-// FIXME There is no longer any good reason to have commit done inside of
-// these methods; the client is unlikely to want to have a committed  bpt 
-// if the other metadata it writes has to be retried. i.e. merge these next 
-// two methods together or rename this one
-// A special open-only form of the init bpt session that does not call commit
-// REQUIRES an externally-maintained UNIQUE execution_id to be provided!!
+/* There is no longer any good reason to have commit done inside of
+* these methods; the client is unlikely to want to have a committed  bpt 
+* if the other metadata it writes has to be retried. i.e. merge these next 
+* two methods together or rename this one
+* A special open-only form of the init bpt session that does not call commit
+* REQUIRES an externally-maintained UNIQUE execution_id to be provided!! */
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
 		enum bptree_insert_flags insert_flags,
@@ -164,14 +138,31 @@ int bptree_initialize_bpt_session(bptree_session *bps,
 	return BPTREE_OP_SUCCESS;
 }
 
+void clear_cursor(bptree_session *bps)
+{
+	if(bps->cursor_node != NULL)
+	{
+		free_node(&(bps->cursor_node));
+	}
+	bps->cursor_pos = 0;
+	bps->eof = 0;
+	
+}
+
 int bptree_set_active_bpt_id(bptree_session *bps, tapioca_bptree_id bpt_id)
 {
 	bps->bpt_id = bpt_id;
 	bps->eof = 0;
 	bps->cursor_pos = 0;
-//	uuid_clear(bps->cursor_cell_id);
 	bps->cursor_node = NULL;
 	return BPTREE_OP_SUCCESS;
+}
+
+void bptree_free_session(bptree_session **bps)
+{
+	free((*bps)->bfield);
+	transaction_destroy((*bps)->t);
+	*bps = NULL;
 }
 
 int bptree_set_num_fields(bptree_session *bps, int16_t num_fields)
@@ -195,40 +186,6 @@ int bptree_set_field_info(bptree_session *bps, int16_t field_num,
 	return BPTREE_OP_SUCCESS;
 
 }
-
-bptree_node * create_new_empty_bptree_node()
-{
-	int i;
-	bptree_node *n = malloc(sizeof(bptree_node));
-	if (n == NULL) return NULL;
-	n->key_count = 0;
-	n->leaf = 1;
-
-	uuid_clear(n->self_key);
-	uuid_clear(n->next_node);
-	uuid_clear(n->prev_node);
-	uuid_clear(n->parent);
-	for (i = 0; i < BPTREE_NODE_SIZE; i++)
-	{
-		n->key_sizes[i] = -1;
-		n->value_sizes[i] = -1;
-		n->keys[i] = NULL;
-		n->values[i] = NULL;
-		n->active[i] = 0;
-		uuid_clear(n->children[i]);
-	}
-	uuid_clear(n->children[BPTREE_NODE_SIZE]);
-
-	return n;
-
-}
-bptree_node * create_new_bptree_node(bptree_session *bps)
-{
-	bptree_node *n = create_new_empty_bptree_node();
-	get_unique_key(bps, n->self_key);
-	return n;
-}
-
 /** Reset/create contents of bptree handle; will need to be commited after
  * Returns:
  * BPTREE_OP_METADATA_ERROR - if problem writing root or meta node
@@ -243,12 +200,12 @@ bptree_meta_node * create_bptree_or_reset(bptree_session *bps, int *rv)
 	bps->execution_id = 1;
 	bps->op_counter = 0;
 
-	root = create_new_bptree_node(bps);
+	root = bpnode_new();
 
 	bptree_meta_node bpm;
 	bpm.bpt_id = bps->bpt_id;
 	bpm.execution_id = 1;
-	uuid_copy(bpm.root_key, root->self_key);
+	uuid_copy(bpm.root_key, bpnode_get_id(root));
 
 	if (write_meta_node(bps, &bpm, root) < 0)
 	{
@@ -258,6 +215,30 @@ bptree_meta_node * create_bptree_or_reset(bptree_session *bps, int *rv)
 	free(root);
 	return read_meta_node(bps, rv);
 
+}
+
+int bptree_search_kv(bptree_session *bps, void *k,
+		int32_t ksize, void *v, int32_t vsize)
+{
+	int rv;
+	bptree_node *root;
+	bptree_meta_node *bpm;
+	bptree_key_val kv;
+	kv.k = k;
+	kv.v = v;
+	kv.ksize = ksize;
+	kv.vsize = vsize;
+
+	if (ksize <= 0 || ksize >= 65000) return BPTREE_OP_INVALID_INPUT;
+	
+	rv = bptree_read_root(bps, &bpm, &root);
+	if (rv != BPTREE_OP_NODE_FOUND) return rv;
+
+	rv = bptree_search_recursive(bps, root, &kv);
+
+	free_node(&root);
+	free_meta_node(&bpm);
+	return rv;
 }
 
 int bptree_search(bptree_session *bps, void *k,
@@ -270,6 +251,7 @@ int bptree_search(bptree_session *bps, void *k,
 	kv.k = k;
 	kv.v = v;
 	kv.ksize = ksize;
+	kv.vsize = 0;
 
 	if (ksize <= 0 || ksize >= 65000) return BPTREE_OP_INVALID_INPUT;
 	
@@ -310,6 +292,14 @@ int bptree_delete(bptree_session *bps, void *k,
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
 	rv = bptree_delete_recursive(bps, root, &kv);
+	
+	if (bpnode_size(root) == 0 && !bpnode_is_leaf(root)) {
+		// Set new root
+		uuid_copy(bpm->root_key, bpnode_get_child_id(root, 0));
+		bpnode_clear_parent(root);
+		if (write_meta_node(bps, bpm, NULL) < 0) 
+			return BPTREE_OP_METADATA_ERROR;
+	}
 
 	free_node(&root);
 	free_meta_node(&bpm);
@@ -319,48 +309,166 @@ int bptree_delete(bptree_session *bps, void *k,
 static int 
 bptree_delete_recursive(bptree_session *bps, bptree_node* x, bptree_key_val *kv)
 {
-	int i,rv;
+	int k_pos, c_pos,rv, rv_f;
 
 #ifdef DEFENSIVE_MODE
-	assert(is_cell_ordered(bps,x));
-	assert(are_key_and_value_sizes_valid(x));
+	assert(is_node_ordered(bps,x) == 0);
 #endif
 
-	i = find_position_in_node(bps, x, kv, &rv);
+	rv_f = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
 	
-	if (x->leaf)
+	if (bpnode_is_leaf(x))
 	{
-		if (rv == BPTREE_OP_KEY_NOT_FOUND)
+		if (rv_f == BPTREE_OP_KEY_FOUND)
 		{
-			// Key was not found where it should have been; do nothing
-			return rv;
+			/* Check if we need to invalidate the cached node 
+			 * a cursor might be on */
+			if(bpnode_is_same(x, bps->cursor_node)
+				&& bps->cursor_pos >= k_pos)
+			{
+				bps->cursor_pos--;
+				bps->cached_key_dirty = 1;
+			}
+			
+			delete_key_from_node(x,k_pos);
+			
+			if (write_node(bps, x) != BPTREE_OP_SUCCESS) 
+				return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
 		}
-		x->active[i] = 0;
-		return write_node(bps, x);
-
+		return rv_f;
 	}
 	else
 	{
-		bptree_node *n;
+		bptree_node *c;
 
-		n = read_node(bps, x->children[i], &rv);
+		c = read_node(bps, bpnode_get_child_id(x, c_pos), &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-		// This should probably be an assertion..
-// 		if (bptree_compar_key_val_to_node(bps,x,kv,i) != 0 ) 
-// 		{
-// 			// TODO Do we need to de-activate inner nodes?
-// 			x->active[i] = 0; 
-// 			 
-// 			
-// 		}
-// 
-		rv = bptree_delete_recursive(bps, n, kv);
-		free_node(&n);
+		
+		rv = bptree_delete_recursive(bps, c, kv);
+		
+		// Check if we have an underflow condition
+		if(is_bptree_node_underflowed(c))
+		{
+			rebalance_nodes(bps, x, c, c_pos);
+		}
+		
+		if (rv_f == BPTREE_OP_KEY_FOUND)
+		{
+			bpnode_set_inactive(x, k_pos);
+			if (write_node(bps, x) != BPTREE_OP_SUCCESS)
+				return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+		}
+		free_node(&c);
 		return rv;
 	}
 }
 
+/*@
+ * Given parent node *p and child *c in position i that has now underflowed, 
+ * merge *c with an adjacent node
+ */
+int rebalance_nodes(bptree_session *bps, bptree_node *p, 
+			       bptree_node *c, int i)
+{
+	int i_adj, rv;
+	bptree_node *adj, *cl, *cr;
+	// Choose an adjacent node to redistribute with
+	i_adj = i+1;
+	if (i >= bpnode_size(p)) {
+		i_adj = i-1;
+	}
+	cl = c;
+	cr = adj = read_node(bps, bpnode_get_child_id(p, i_adj), &rv);
+	if (rv != BPTREE_OP_NODE_FOUND) return rv;
+	assert(!is_bptree_node_underflowed(adj));
+	
+	if (i_adj < i)
+	{
+		cl = adj;
+		cr = c;
+	}
+	assert(bpnode_is_leaf(cl) == bpnode_is_leaf(cr));
+	
+	int sp_i = (i < i_adj) ? i : i_adj;
+	if (bpnode_size(c) + bpnode_size(adj) < BPTREE_NODE_SIZE)
+	{
+		// Reposition cursor if we clear the node it was on
+		if(bpnode_is_same(cr, bps->cursor_node)) 
+		{
+			cache_node_in_session(bps, cl);
+			bps->cached_key_dirty = 1;
+			bps->cursor_pos = bpnode_size(cl) + bps->cursor_pos; 
+		}
+		// Concatenate (i.e. remove one) nodes
+		concatenate_nodes(p, cl, cr, sp_i);
+		
+	} 
+	else 
+	{
+		reposition_cursor_before_redistrib(bps, cl, cr);
+		// Redistribute keys among nodes
+		redistribute_keys(p, cl, cr, sp_i);
+	}
+	
+	// cl is about to become the new root, clear parent before writing back
+	if (bpnode_size(p) == 0) {
+		bpnode_clear_parent(cl);
+	}
+	
+	rv = write_3_nodes(bps, p,cl,cr);
+	free_node(&adj);
+	
+	return rv;
+}
 
+/* When we redistribute keys, we need to ensure that the cursor has been 
+ * repositioned to avoid holes or duplicate reads to the client */
+void reposition_cursor_before_redistrib(bptree_session *bps, bptree_node *cl, 
+					bptree_node *cr)
+{
+	int l, r;
+	assert(bpnode_is_leaf(cl) == bpnode_is_leaf(cr));
+	if (!bpnode_is_leaf(cl)) return;
+
+	// Two cases to handle:
+	// Case 1: cursor is on the right node and we are about to move keys L
+	if(bpnode_size(cl) < bpnode_size(cr) && 
+		bpnode_is_same(cr, bps->cursor_node))
+	{
+		l = (int)ceil((bpnode_size(cl) + bpnode_size(cr)) / 2);
+		r = (int)floor((bpnode_size(cl) + bpnode_size(cr)) / 2);
+		int to_move = bpnode_size(cr) - r;
+		bps->cursor_pos -= to_move;
+		
+		if (bps->cursor_pos < 0)
+		{
+			// We've moved the position to the other node
+			bps->cursor_pos = bps->cursor_pos + l;
+			cache_node_in_session(bps, cl);
+			bps->cached_key_dirty = 1; 
+		}
+		
+	}
+	// Case 2: cursor is on the left node and we are about to move keys R
+	else if (bpnode_size(cl) > bpnode_size(cr) &&
+		bpnode_is_same(cl, bps->cursor_node))
+	{
+		l = (int)floor((bpnode_size(cl) + bpnode_size(cr)) / 2);
+		r = (int)ceil((bpnode_size(cl) + bpnode_size(cr)) / 2);
+		int to_move = bpnode_size(cl) - l;
+		bps->cursor_pos += to_move;
+		
+		if (bps->cursor_pos >= l)
+		{
+			// We've moved the position to the other node
+			bps->cursor_pos = to_move;
+			cache_node_in_session(bps, cr);
+			bps->cached_key_dirty = 1; 
+		}
+	}
+	
+	return;
+}
 /*@
  * Update functions are basically simplified versions of ones for insert();
  * Return 0 if the key was not found (and do nothing), -1 on error
@@ -392,50 +500,25 @@ int bptree_update(bptree_session *bps, void *k,
 	return rv;
 }
 
-// Allocates memory for and copies contents of kv1 into kv2
-void copy_key_val(bptree_key_val *dest, bptree_key_val *src)
+/*@ Write out three nodes (a common situation) and return an error if any one
+ * failed. TODO Figure out a *portable* way to use the stdargs.h header to make
+ * this support any number of nodes (#include <stdargs.h> doesn't work on Fedora?!)
+ */
+int write_3_nodes(bptree_session *bps, bptree_node *n1, 
+		bptree_node *n2, bptree_node *n3)
 {
-	assert(src->ksize < BPTREE_MAX_VALUE_SIZE);
-	assert(src->vsize < BPTREE_MAX_VALUE_SIZE);
-	dest->k = malloc(src->ksize);
-	dest->v = malloc(src->vsize);
-	memcpy(dest->k, src->k, src->ksize);
-	memcpy(dest->v, src->v, src->vsize);
-	dest->ksize = src->ksize;
-	dest->vsize = src->vsize;
-}
-bptree_key_val * copy_key_val_from_node(bptree_node *n, int i)
-{
-	bptree_key_val *kv = malloc(sizeof(bptree_key_val));
-	assert(n->key_sizes[i] < BPTREE_MAX_VALUE_SIZE);
-	assert(n->value_sizes[i] < BPTREE_MAX_VALUE_SIZE);
-	kv->k = malloc(n->key_sizes[i]);
-	kv->v = malloc(n->value_sizes[i]);
-	get_key_val_from_node(n, i, kv);
-	return kv;
-}
-// Another utility method to eliminate a lot of messy code
-inline void get_key_val_from_node(bptree_node *n, int i, bptree_key_val *kv)
-{
-	kv->k = n->keys[i];
-	kv->v = n->values[i];
-	kv->ksize = n->key_sizes[i];
-	kv->vsize = n->value_sizes[i];
-}
 
-inline void free_key_val(bptree_key_val **kv)
-{
-	if(*kv == NULL) assert (0 == 0xDEADBEEF);
-	free((*kv)->k);
-	free((*kv)->v);
-	(*kv)->k = NULL;
-	(*kv)->v = NULL;
-	free(*kv);
-	*kv = NULL;
+	if (write_node(bps, n1) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	if (write_node(bps, n2) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	if (write_node(bps, n3) != BPTREE_OP_SUCCESS)
+		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
+	
+	return BPTREE_OP_SUCCESS;
 }
-
 // Wrapper for main compar() method but using key/val structs
-inline int bptree_compar_keys(bptree_session *bps,
+int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2)
 {
 	return bptree_compar(bps, kv1->k, kv2->k, kv1->v, kv2->v,
@@ -443,21 +526,23 @@ inline int bptree_compar_keys(bptree_session *bps,
 
 }
 
-inline int bptree_compar_to_node(bptree_session *bps,
+// TODO Refactor
+int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos)
 {
 	char nb = '\0';
 	int num_fields = num_fields_used(bps, kv);
 	if (bps->insert_flags == BPTREE_INSERT_ALLOW_DUPES) {
-		return bptree_compar(bps, x->keys[pos], kv->k, x->values[pos],
-			kv->v, x->value_sizes[pos],kv->vsize, num_fields);
+		return bptree_compar(bps, bpnode_get_key(x,pos), kv->k, 
+				     bpnode_get_value(x, pos), kv->v, 
+				     bpnode_get_value_size(x, pos),kv->vsize, 
+				     num_fields);
 	}
 	else 
 	{
-		return bptree_compar(bps, x->keys[pos], kv->k, &nb,&nb,1,1, num_fields);
+		return bptree_compar(bps, bpnode_get_key(x,pos), kv->k, 
+				     &nb,&nb,1,1, num_fields);
 	}
-	
-
 }
 
 /*@ Calculate the number of fields actually used in the referenced kv */
@@ -475,13 +560,20 @@ inline int num_fields_used(bptree_session *bps, const bptree_key_val *kv) {
 	
 }
 
+void free_key_val(bptree_key_val **kv)
+{
+	if(*kv == NULL) assert (0 == 0xDEADBEEF);
+	free((*kv)->k);
+	free((*kv)->v);
+	(*kv)->k = NULL;
+	(*kv)->v = NULL;
+	free(*kv);
+	*kv = NULL;
+}
+
 // A generalization of the old compar function we used, but incorporating the
 // information we have provided about what fields are present and their
 // individual compar functions
-// TODO In order for non-unique secondary keys to work, we have to also compare
-// the values; this is a bit clunky now and probably should be rethought a bit
-// FIXME There is a problem here; we need to STOP going through the fields
-// if the key we are comparing against is only a partial key!
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields)
@@ -491,7 +583,6 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 	const unsigned char *a1 = k1;
 	const unsigned char *a2 = k2;
 	offset = 0;
-	//for (i = 1; i <= bps->num_fields; i++)
 	for (i = 1; i <= tot_fields; i++)
 	{
 		const void *u = a1 + offset;
@@ -502,59 +593,64 @@ int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		offset += bf->f_sz;
 		bf++;
 	}
-
-	// Key is the same; return whether the values are the same
-	if (vsize1 != vsize2) return (vsize1 < vsize2) ? -1 : 1;
-	return memcmp(v1, v2, vsize1);
+	
+	// Keypart is the same; return whether the values are the same
+	if(bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
+	{
+		return 0;
+	} 
+	else if (tot_fields == bps->num_fields)
+	{
+		if (vsize1 != vsize2) return (vsize1 < vsize2) ? -1 : 1;
+		return memcmp(v1, v2, vsize1);
+	}
+	else
+	{
+		return res;
+	}
 }
 
-// TODO This method will only update ONE value for the given key, so it is
-// only is appropriate for primary-key based updates
 static int bptree_update_recursive(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv)
 {
-	int i,rv ;
+	int k_pos, c_pos, rv, rv_f ;
 
 #ifdef DEFENSIVE_MODE
-	assert(is_cell_ordered(bps,x));
-	assert(are_key_and_value_sizes_valid(x));
+	assert(is_node_ordered(bps,x) == 0);
 #endif
 
-	i = find_position_in_node(bps, x, kv, &rv);
-	if (x->leaf)
+	rv_f = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
+	if (bpnode_is_leaf(x))
 	{
-		if (rv == BPTREE_OP_KEY_NOT_FOUND)
-		{
-			// Key was not found where it should have been; do nothing
-			return rv;
-		}
+		if (rv_f == BPTREE_OP_KEY_NOT_FOUND) return rv_f;
 		
-		unsigned char *newval = realloc(x->values[i],kv->vsize);
-		assert(newval != NULL); // just in case we can't reallocate...
-		x->values[i] = newval;
-		memcpy(x->values[i], kv->v, kv->vsize);
-		x->value_sizes[i] = kv->vsize;
+		clear_key_position(x,k_pos);
+		bpnode_size_dec(x);
+		copy_key_val_to_node(x, kv, k_pos);
+		
+		if(bpnode_is_same(x, bps->cursor_node) && 
+			bps->cursor_pos >= k_pos)
+		{
+			bps->cached_key_dirty = 1;
+		}
+			
 		return write_node(bps, x);
 	}
 	else
 	{
-		bptree_node *n = read_node(bps, x->children[i], &rv);
+		bptree_node *n;
+		n = read_node(bps, bpnode_get_child_id(x,c_pos), &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-		assert(is_valid_traversal(bps, x, n, i));
+		traversal_check(bps, x, n, c_pos);
 
-		if (i <= x->key_count && i > 0)
+		if (rv_f == BPTREE_OP_KEY_FOUND)
 		{
-			// FIXME Refactor out reference to bptree_compar
-			if (bptree_compar_to_node(bps,x,kv, i-1) == 0)
-			{
-				unsigned char *newval = realloc(x->values[i-1],kv->vsize);
-				assert(newval != NULL); // just in case we can't reallocate...
-				x->values[i-1] = newval;
-				memcpy(x->values[i-1], kv->v, kv->vsize);
-				x->value_sizes[i-1] = kv->vsize;
-				rv = write_node(bps, x);
-				if (rv != BPTREE_OP_SUCCESS) return rv;
-			}
+			
+			clear_key_position(x,k_pos);
+			bpnode_size_dec(x);
+			copy_key_val_to_node(x, kv, k_pos);
+			rv = write_node(bps, x);
+			if (rv != BPTREE_OP_SUCCESS) return rv;
 		}
 		rv = bptree_update_recursive(bps, n, kv);
 		free_node(&n);
@@ -575,40 +671,55 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	if (ksize <= 0 || ksize >= 65000
 		|| vsize <= 0 || vsize >= 65000) return BPTREE_OP_INVALID_INPUT;
 	
-	rv = bptree_search(bps, k, ksize, _val, &_vsize);
+	if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
+	{
+		rv = bptree_search(bps, k, ksize, _val, &_vsize);
+	}
+	else if (bps->insert_flags == BPTREE_INSERT_ALLOW_DUPES)
+	{
+		rv = bptree_search_kv(bps, k, ksize, v, vsize);
+	}
+	
+	// Search will set a cursor position, but we need to clear this since
+	// it could lead to index_next being successfully called when it shouldn't
+	clear_cursor(bps);
 
 	kv.k = k;
 	kv.v = v;
 	kv.ksize = ksize;
 	kv.vsize = vsize;
 	
-	if (rv == BPTREE_OP_KEY_FOUND 
-		&& bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY)
-		return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
+	if (rv == BPTREE_OP_KEY_FOUND ) return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 
-	if(! (rv == BPTREE_OP_KEY_NOT_FOUND ||
-		rv == BPTREE_OP_KEY_FOUND)) return rv;
+	if(rv != BPTREE_OP_KEY_NOT_FOUND) return rv;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
-	if (node_is_full(root))
+	if (bpnode_is_full(root))
 	{
-		bptree_node *newroot = create_new_bptree_node(bps);
-		newroot->leaf = 0;
-		uuid_copy(newroot->children[0], root->self_key);
-		uuid_copy(bpm->root_key, newroot->self_key);
-		uuid_copy(root->parent, newroot->self_key);
+		bptree_node *newroot = bpnode_new();
+		bptree_node *root_sibling = bpnode_new();
+		bpnode_set_leaf(newroot, 0);
+		uuid_copy(bpm->root_key, bpnode_get_id(newroot));
+		bpnode_set_parent(root, newroot);
 
-		if (write_meta_node(bps, bpm, newroot) < 0) return BPTREE_OP_METADATA_ERROR;
-		rv = bptree_split_child(bps, newroot,0, root, 1);
-		assert(rv == BPTREE_OP_SUCCESS);
+		if (write_meta_node(bps, bpm, newroot) != BPTREE_OP_SUCCESS) 
+			return BPTREE_OP_METADATA_ERROR;
+		
+		bpnode_set_child(newroot, 0, root);
+		bpnode_set_child(newroot, 1, root_sibling);
+		bptree_split_child(bps, newroot,0, root, root_sibling);
+		rv = write_3_nodes(bps, newroot, root, root_sibling);
+		if (rv != BPTREE_OP_SUCCESS) return rv;
+		
 		rv = bptree_insert_nonfull(bps, newroot, &kv, 1);
 
-		assert(newroot->key_count > 0);
-		assert(uuid_compare(newroot->self_key, root->parent) == 0);
-		assert(uuid_compare(newroot->self_key, bpm->root_key) == 0);
+		assert(!bpnode_is_empty(newroot));
+		//assert(uuid_compare(newroot->self_key, root->parent) == 0);
+		//assert(uuid_compare(newroot->self_key, bpm->root_key) == 0);
 		free_node(&newroot);
+		free_node(&root_sibling);
 	}
 	else
 	{
@@ -616,7 +727,7 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 	}
 	free_node(&root);
 	free_meta_node(&bpm);
-	//assert(rv != BPTREE_OP_TAPIOCA_NOT_READY);
+	
 	if (rv == BPTREE_OP_TAPIOCA_NOT_READY) 
 	{
 		// Since we search the whole insert path before, we should have this
@@ -631,203 +742,202 @@ int bptree_insert(bptree_session *bps, void *k, int ksize,
 
 }
 
-static int bptree_split_child(bptree_session *bps,
-		bptree_node* x, int i, bptree_node* y, int lvl)
+
+
+/*@ Take a full node *cl and split it in two, promoting the middle key up to the
+ * parent *p; *cr should be a fresh node provided by the caller
+ */
+void bptree_split_child(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr)
 {
 	int j,rv;
-#ifdef DEFENSIVE_MODE
-	assert(is_node_sane(x));
-	assert(is_node_sane(y));
-	assert(is_cell_ordered(bps,x));
-	assert(is_cell_ordered(bps,y));
-#endif
+	assert(bpnode_is_full(cl));
+	assert(!bpnode_is_full(p));
 #ifdef TRACE_MODE
-	write_split_to_trace(bps, x, y, NULL, i, lvl);
+	write_split_to_trace(bps, p, cl, NULL, i, lvl);
 #endif
-
-	shift_bptree_node_children(x, i);
-	shift_bptree_node_elements(x, i);
-	x->key_count++;
-	// Move the split key up; if y is a leaf, copy, if not, move it
-	move_bptree_node_element(y, x, BPTREE_MIN_DEGREE - 1, i, !y->leaf);
-
-	bptree_node *n= create_new_bptree_node(bps);
-	n->leaf = y->leaf;
-	if (y->leaf)
+	if (bpnode_is_leaf(cl)) {
+		bptree_split_child_leaf(bps, p, i, cl, cr);
+	}
+	else 
 	{
-		// If y is a leaf, we want to make sure we maintain the median key
-		n->key_count = BPTREE_MIN_DEGREE;
-		y->key_count = BPTREE_MIN_DEGREE - 1;
-	}
-	else {
-		// If we are splitting a non-leaf, we have BP_DEG * 2 children to
-		// distribute while the median node goes up
-		n->key_count = BPTREE_MIN_DEGREE - 1;
-		y->key_count = BPTREE_MIN_DEGREE - 1;
+		bptree_split_child_nonleaf(bps, p, i, cl, cr);
 	}
 
-	// Shift over elements into new node and null out old stuff
-	for (j = 0; j < n->key_count; j++)
+	if(rv = are_split_cells_valid(bps, p, i, cl, cr) != 0) 
 	{
-		int shift = j + BPTREE_MIN_DEGREE - y->leaf;
-		move_bptree_node_element(y, n, shift, j, 1);
+		printf("ERROR: Bad split! rv %d\n", rv);
+		dump_node_info(bps, p);
+		dump_node_info(bps, cl);
+		dump_node_info(bps, cr);
+		assert(0);
 	}
-
-	uuid_copy(x->children[i + 1], n->self_key);
-	uuid_copy(n->parent, x->self_key);
-	uuid_copy(y->parent, x->self_key);
-
-	if (!y->leaf)
-	{
-		// Shift over children equally among the two
-		for (j = 0; j < BPTREE_MIN_DEGREE; j++)
-		{
-			int shift = j + BPTREE_MIN_DEGREE;
-			uuid_copy(n->children[j], y->children[shift]);
-			uuid_clear(y->children[shift]);
-		}
-	}
-	else
-	{
-		uuid_copy(n->next_node, y->next_node);
-		uuid_copy(y->next_node, n->self_key);
-		uuid_copy(n->prev_node, y->self_key);
-	}
-
-
-#ifdef DEFENSIVE_MODE
-	assert(is_cell_ordered(bps, x));
-	assert(is_cell_ordered(bps, y));
-	assert(is_cell_ordered(bps, n));
-	are_split_cells_valid(bps, x,i,y,n); // Assertions called inside
-#endif
-
+	
 #ifdef TRACE_MODE
-	write_split_to_trace(bps, x, y, new, i, lvl);
+	write_split_to_trace(bps, x, y, n, i, lvl);
 #endif
-
-	if (write_node(bps, x) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
-	if (write_node(bps, y) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
-	if (write_node(bps, n) != BPTREE_OP_SUCCESS)
-		return BPTREE_OP_NODE_NOT_FOUND_OR_CORRUPT;
-
-	free_node(&n);
-	return BPTREE_OP_SUCCESS;
 }
 
-/*@ Shift the elements of bptree_node at position pos by one  */
-void shift_bptree_node_elements(bptree_node *x, int pos)
-{
-	assert(x->key_count < BPTREE_NODE_SIZE);
-	int j;
-	if(pos > x->key_count-1) return;
-	for (j = x->key_count - 1; j >= pos; j--)
-	{
-		x->keys[j+1] = malloc(x->key_sizes[j]);
-		memcpy(x->keys[j+1], x->keys[j], x->key_sizes[j]);
-		x->key_sizes[j+1] = x->key_sizes[j];
-		x->values[j+1] = malloc(x->value_sizes[j]);
-		memcpy(x->values[j+1], x->values[j], x->value_sizes[j]);
-		x->value_sizes[j+1] = x->value_sizes[j];
-		x->active[j+1] = x->active[j];
-	}
-}
 
-void shift_bptree_node_children(bptree_node *x, int pos)
+void bptree_split_child_leaf(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr)
 {
-	int j;
-	for (j = x->key_count ; j > pos; j--)
-	{
-		uuid_copy(x->children[j + 1],x->children[j]);
-	}
-}
+	int l,r,rv;
+	assert(bpnode_is_leaf(cl));
+	
+	shift_bptree_node_children_right(p, i);
+	shift_bptree_node_elements_right(p, i);
+	
+	l = BPTREE_MIN_DEGREE - 1;
+	
+	copy_bptree_node_element(cl, p, l, i);
+	bpnode_size_inc(p);
 
-/*@ Move btree element from one node to another; assumes there is space
- * Modes available:
- * - Move only references; clear pointers in original node (move = 1)
- * - Make copy and alloc new space (move = 0)
- * */
-void move_bptree_node_element(bptree_node *s, bptree_node *d,
-		int s_pos, int d_pos, int move)
-{
-	d->key_sizes[d_pos] = s->key_sizes[s_pos];
-	d->value_sizes[d_pos] = s->value_sizes[s_pos];
-	d->active[d_pos] = s->active[s_pos];
-	if (move)
+	bpnode_set_leaf(cr, bpnode_is_leaf(cl));
+	
+	// Shift over elements into new node  - for leaf move also the splitkey
+	for (r = 0; r < BPTREE_NODE_MIN_SIZE + 1; r++)
 	{
-		d->keys[d_pos] = s->keys[s_pos];
-		d->values[d_pos] = s->values[s_pos];
-		s->keys[s_pos] = NULL;
-		s->values[s_pos] = NULL;
-		s->key_sizes[s_pos] = -1;
-		s->value_sizes[s_pos] = -1;
-		s->active[s_pos] = 0;
-	}
-	else
-	{
-		d->keys[d_pos] = malloc(s->key_sizes[s_pos]);
-		memcpy(d->keys[d_pos], s->keys[s_pos], s->key_sizes[s_pos]);
-		d->values[d_pos] = malloc(s->value_sizes[s_pos]);
-		memcpy(d->values[d_pos], s->values[s_pos], s->value_sizes[s_pos]);
+		copy_bptree_node_element(cl, cr, l, r);
+		clear_key_position(cl, l);
+		bpnode_size_inc(cr);
+		bpnode_size_dec(cl);
+		l++;
 	}
 
+	bpnode_set_child(p, i+1, cr);
+	bpnode_set_parent(cr, p);
+	bpnode_set_parent(cl, p);
+
+	bpnode_set_next_id(cr, bpnode_get_next_id(cl));
+	bpnode_set_next(cl, cr);
+	bpnode_set_prev(cr, cl);
 }
 
-/*
-inline int is_key_same(bptree_session *bps, bptree_node *x, int i, void *k)
+void bptree_split_child_nonleaf(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr)
 {
-	if (i < 0)
-		return 0;
-	int rv = bptree_compar(bps, k, x->keys[i], &i,&i,sizeof(int),sizeof(int));
-	if (rv == 0) return 1;
-	return 0;
-}
-*/
+	int l, r,rv;
+	
+	assert(!bpnode_is_leaf(cl));
+	
+	shift_bptree_node_children_right(p, i);
+	shift_bptree_node_elements_right(p, i);
+	
+	l = BPTREE_MIN_DEGREE - 1;
+	copy_bptree_node_element(cl, p, l, i);
+	bpnode_set_child_id(cr, 0, bpnode_get_child_id(cl, l+1));
+	bpnode_clear_child(cl, l+1);
+	clear_key_position(cl, l);
+	bpnode_size_dec(cl);
+	bpnode_size_inc(p);
+	l++; 
 
-// Experimental
-// Independent of key or key-value; check in bps
+	bpnode_set_leaf(cr, bpnode_is_leaf(cl));
+	// Shift over elements into new node 
+	for (r = 0; r < BPTREE_NODE_MIN_SIZE ; r++)
+	{
+		copy_bptree_node_element(cl, cr, l, r);
+		bpnode_size_inc(cr);
+		bpnode_size_dec(cl);
+		bpnode_set_child_id(cr, r+1, bpnode_get_child_id(cl, l+1));
+		bpnode_clear_child(cl, l+1);
+		clear_key_position(cl, l);
+		l++;
+	}
+
+	bpnode_set_child(p, i+1, cr);
+	bpnode_set_parent(cr, p);
+	bpnode_set_parent(cl, p);
+}
+
+/*@ Finds the key and child position in a node of a key-value
+ * (i.e. where the key is or would be, and what child should be traversed
+ * to find it down the tree)
+ */
 int find_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv, int *rv)
+		bptree_key_val *kv, int *k_pos, int *c_pos)
 {
-	int i;
-	int cmp, prev;
-	i = x->key_count-1;
-	if(i < 0) {
-		*rv = BPTREE_OP_KEY_NOT_FOUND;
-		return 0;
-	}
-	cmp = prev = 1;
-
-	while(i >= 0 && (cmp = bptree_compar_to_node(bps,x,kv,i)) >= 0)
+	if (num_fields_used(bps, kv) == bps->num_fields)
 	{
-		i--;
+		return find_position_in_node_exact(bps, x, kv, k_pos, c_pos);
+	}
+	else
+	{
+		return find_position_in_node_partial(bps, x, kv, k_pos, c_pos);
+	}
+}
+
+int find_position_in_node_partial(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *k_pos, int *c_pos)
+{
+	int i, cmp, prev, rv = BPTREE_OP_KEY_NOT_FOUND;
+	if (bpnode_size(x) <= 0) 
+	{
+		*k_pos = 0;
+		*c_pos = 0;
+		return BPTREE_OP_KEY_NOT_FOUND;
+	}
+
+	cmp = prev = 1;
+	for(i = bpnode_size(x)-1; i >= 0; i--)
+	{
+		cmp = bptree_compar_to_node(bps,x,kv,i);
+		if (cmp < 0) break;
 		prev = cmp;
 	}
 	i++;
-	*rv = (prev == 0 && x->active[i]) ? BPTREE_OP_KEY_FOUND : BPTREE_OP_KEY_NOT_FOUND;
-	// FIXME Optmize this extra call to num_fields() out
-	if(*rv == BPTREE_OP_KEY_FOUND && !x->leaf 
-		&& bps->num_fields == num_fields_used(bps, kv))
+	
+	*k_pos = i;
+	
+	if (prev == 0) 
 	{
-		i++;
+		rv = BPTREE_OP_KEY_FOUND;
+		//*c_pos = *k_pos + 1;
+		*c_pos = *k_pos ;
 	}
-	return i;
+	else
+	{
+		rv = BPTREE_OP_KEY_NOT_FOUND;
+		*c_pos = *k_pos;
+	}	
+	
+	// Border case -- if kv is greater than the largest key, and ndoe is
+	// full
+	return rv;
 }
 
-void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos)
+int find_position_in_node_exact(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *k_pos, int *c_pos)
 {
-	x->keys[pos] = malloc(kv->ksize);
-	x->values[pos] = malloc(kv->vsize);
-	memcpy(x->keys[pos], kv->k, kv->ksize);
-	x->key_sizes[pos] = kv->ksize;
-	memcpy(x->values[pos], kv->v, kv->vsize);
-	x->value_sizes[pos] = kv->vsize;
-	x->active[pos] = 1;
-	x->key_count++;
-}
+	int i, cmp, rv = BPTREE_OP_KEY_NOT_FOUND;
+	if (bpnode_size(x) <= 0) 
+	{
+		*k_pos = 0;
+		*c_pos = 0;
+		return BPTREE_OP_KEY_NOT_FOUND;
+	}
 
+	for(i = 0; i < bpnode_size(x); i++)
+	{
+		cmp = bptree_compar_to_node(bps,x,kv,i);
+		if (cmp >= 0) break;
+	}
+	
+	*k_pos = i;
+	
+	if (cmp == 0) 
+	{
+		rv = BPTREE_OP_KEY_FOUND;
+		*c_pos = *k_pos + 1;
+	}
+	else
+	{
+		*c_pos = *k_pos;
+	}	
+	
+	return rv;
+}
 
 /** Insert into a non-full bptree node
  * Returns:
@@ -844,21 +954,15 @@ static int bptree_insert_nonfull(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv, int lvl)
 {
 
-	int pos, rv =BPTREE_OP_SUCCESS;
-
-#ifdef DEFENSIVE_MODE
-	assert(is_cell_ordered(bps,x));
-	assert(are_key_and_value_sizes_valid(x));
-#endif
-	pos = find_position_in_node(bps, x, kv, &rv);
-	if (pos < 0) pos = 0;
-	assert(pos < BPTREE_NODE_SIZE );
+	int c_pos, k_pos, rv =BPTREE_OP_SUCCESS, rv2;
 
 #ifdef TRACE_MODE
 	write_insert_to_trace(bps, x, kv, pos, lvl);
 #endif
 
-	if (x->leaf)
+	rv = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
+	
+	if (bpnode_is_leaf(x))
 	{
 		if (bps->insert_flags == BPTREE_INSERT_UNIQUE_KEY && 
 			rv == BPTREE_OP_KEY_FOUND)
@@ -866,85 +970,78 @@ static int bptree_insert_nonfull(bptree_session *bps,
 			return BPTREE_ERR_DUPLICATE_KEY_INSERTED;
 		}
 
-		shift_bptree_node_elements(x,pos);
-		copy_key_val_to_node(x, kv, pos);
+		if(bpnode_is_same(x, bps->cursor_node))
+		{
+			bps->cached_key_dirty = 1;
+		}
+		
+		shift_bptree_node_elements_right(x,k_pos);
+		copy_key_val_to_node(x, kv, k_pos);
 
 		return write_node(bps, x);
 	}
 	else
 	{
-		bptree_node *n = NULL, *n2 = NULL;
+		bptree_node *n = NULL; 
 
-		n = read_node(bps, x->children[pos], &rv);
-		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-#ifdef TRACE_MODE
-		if(!is_valid_traversal(bps, x,n,pos))
+		n = read_node(bps, bpnode_get_child_id(x,c_pos), &rv2);
+		if (rv2 != BPTREE_OP_NODE_FOUND) return rv2;
+
+		if (bpnode_is_full(n))
 		{
-			fflush(trace_fp);
-			kill(getpid(),3);
-			exit(1);
+			bptree_node *sp_node = bpnode_new();
+			bptree_split_child(bps, x, c_pos, n, sp_node);
+			rv2 = write_3_nodes(bps, x, n, sp_node);
+			if (rv2 != BPTREE_OP_SUCCESS) return rv2;
+			if(bptree_compar_to_node(bps, x, kv, c_pos) < 0) 
+			{
+				rv = bptree_insert_nonfull(bps, sp_node, kv, lvl+1);
+			}
+			else
+			{
+				rv = bptree_insert_nonfull(bps, n, kv, lvl+1);
+			}
+			free_node(&sp_node);
 		}
-#else
-		assert(is_valid_traversal(bps, x,n,pos));
-#endif
-
-		if (node_is_full(n))
+		else
 		{
-			rv = bptree_split_child(bps, x, pos, n, lvl);
-			if (rv != BPTREE_OP_SUCCESS) return rv;
-			uuid_t new_node_id;
-			uuid_copy(new_node_id, x->children[pos+1]);
-			// FIXME Refactor out reference to bptree_compar
-			if(bptree_compar_to_node(bps, x, kv, pos) < 0) pos++;
 
-			n2 = read_node(bps, x->children[pos], &rv);
-			if (rv != BPTREE_OP_NODE_FOUND) return rv;
-			assert(!node_is_full(n2));
-			// We should have got back either of the two split nodes
-			assert(uuid_compare(x->children[pos], new_node_id) == 0 ||
-					uuid_compare(x->children[pos], n->self_key) == 0);
-			free_node(&n);
-			n = n2;
+			rv = bptree_insert_nonfull(bps, n, kv, lvl+1);
 		}
-
-#ifdef DEFENSIVE_MODE
-		assert(is_cell_ordered(bps,n));
-#endif
-		rv = bptree_insert_nonfull(bps, n, kv, lvl+1);
+		
 		free_node(&n);
 		return rv;
 	}
 }
 
+int cache_node_in_session(bptree_session *bps, bptree_node *c)
+{
+	if (bps->cursor_node != NULL) free_node(&(bps->cursor_node));
+	bps->cursor_node = copy_node(c);
+	bps->cached_key_dirty = 0;
+	bps->eof = 0;
+}
 static int bptree_search_recursive(bptree_session *bps,
 		bptree_node* x, bptree_key_val *kv)
 {
-	int i = 0, rv;
+	int c_pos, k_pos, rv, rva;
 	bptree_node *n;
 #ifdef DEFENSIVE_MODE
-	assert(are_key_and_value_sizes_valid(x));
-	assert(is_cell_ordered(bps,x));
+	assert(is_node_ordered(bps,x) == 0);
 #endif
 
-	i = find_position_in_node(bps, x, kv, &rv);
-	if (x->leaf)
+	rv = find_position_in_node(bps, x, kv, &k_pos, &c_pos);
+	if (bpnode_is_leaf(x))
 	{
-		if (bps->cursor_node != NULL) free_node(&(bps->cursor_node));
-		bps->cursor_node = copy_node(x);
-		bps->cursor_pos = i;
-		bps->eof = 0;
-		/*
-		if (i >= x->key_count || i < 0)
+		
+		cache_node_in_session(bps, x);
+		bps->cursor_pos = k_pos;
+		
+		if(rv == BPTREE_OP_KEY_FOUND && bpnode_is_active(x, k_pos))
 		{
-			kv->vsize = 0;
-			return BPTREE_OP_KEY_NOT_FOUND;
-		}
-		*/
-		if(rv == BPTREE_OP_KEY_FOUND && x->active[i])
-		{
-			memcpy(kv->v, x->values[i], x->value_sizes[i]);
-			kv->vsize = x->value_sizes[i];
-			//if (kv->ksize >= x->key_sizes[i]) bps->cursor_pos++;
+			memcpy(kv->v, bpnode_get_value(x,k_pos), 
+			       bpnode_get_value_size(x,k_pos));
+			kv->vsize = bpnode_get_value_size(x,k_pos);
 		}
 		else
 		{
@@ -954,13 +1051,13 @@ static int bptree_search_recursive(bptree_session *bps,
 	}
 	else
 	{
-		n = read_node(bps, x->children[i], &rv);
+		n = read_node(bps, bpnode_get_child_id(x,c_pos), &rv);
 		if (rv != BPTREE_OP_NODE_FOUND)
 		{
 			kv->vsize = 0;
 			return rv;
 		}
-		assert(is_valid_traversal(bps, x, n, i));
+		traversal_check(bps, x, n, c_pos);
 		rv = bptree_search_recursive(bps, n, kv);
 		free_node(&n);
 		return rv;
@@ -975,41 +1072,59 @@ int bptree_index_next(bptree_session *bps, void *k,
 	{
 		bps->eof = 0;
 		bps->cursor_pos = 0;
-		//TODO This should probably be an error condition
-		return BPTREE_OP_EOF;
+		*ksize = 0;
+		*vsize = 0;
+		return BPTREE_OP_CURSOR_NOT_SET;
+	}
+	if (bps->cached_key_dirty)
+	{
+		bptree_node *c =
+			read_node(bps, bpnode_get_id(bps->cursor_node), &rv);
+		if (rv != BPTREE_OP_NODE_FOUND) return rv;
+		cache_node_in_session(bps, c);
+		free_node(&c);
 	}
 
-	rv = bptree_index_next_internal(bps, k, ksize,v, vsize);
+	bptree_key_val kv;
+	kv.k = k;
+	kv.v = v;
+	rv = bptree_index_next_internal(bps, &kv);
 	while (rv == BPTREE_OP_KEY_DELETED)
 	{
-		rv = bptree_index_next_internal(bps, k, ksize,v, vsize);
+		rv = bptree_index_next_internal(bps, &kv);
+	}
+	if (rv == BPTREE_OP_KEY_FOUND)
+	{
+		*ksize = kv.ksize;
+		*vsize = kv.vsize;
+	}
+	else
+	{
+		*ksize = 0;
+		*vsize = 0;
 	}
 	return rv;
 }
 
-int bptree_index_next_internal(bptree_session *bps, void *k,
-		int32_t *ksize, void *v, int32_t *vsize)
+int bptree_index_next_internal(bptree_session *bps, bptree_key_val *kv)
 {
 	int rv;
 
 	if(bps->eof) bps->eof = 0;
 
 #ifdef DEFENSIVE_MODE
-	assert(are_key_and_value_sizes_valid(bps->cursor_node));
-	assert(bps->cursor_node->leaf == 1);
+	assert(bpnode_is_leaf(bps->cursor_node) == 1);
 	assert(bps->cursor_pos >= 0 && bps->cursor_pos <= BPTREE_NODE_SIZE);
 #endif
 
-	while(!bps->cursor_node->active[bps->cursor_pos] &&
-			bps->cursor_pos < bps->cursor_node->key_count -1) bps->cursor_pos++;
+	while(!bpnode_is_active(bps->cursor_node, bps->cursor_pos) &&
+		bps->cursor_pos < bpnode_size(bps->cursor_node)-1) bps->cursor_pos++;
 
-	if (bps->cursor_pos >= bps->cursor_node->key_count)
+	if (bps->cursor_pos >= bpnode_size(bps->cursor_node))
 	{
-		if(uuid_is_null(bps->cursor_node->next_node))
+		if(bpnode_is_eof(bps->cursor_node))
 		{
 			bps->eof = 1;
-			*vsize = 0;
-			*ksize = 0;
 			bps->eof = 0;
 			free_node(&(bps->cursor_node));
 			return BPTREE_OP_EOF; // protect us from ourselves
@@ -1018,10 +1133,8 @@ int bptree_index_next_internal(bptree_session *bps, void *k,
 		{
 			// Read next cell
 			bptree_node *next;
-			next = read_node(bps, bps->cursor_node->next_node, &rv);
+			next = read_node(bps, bpnode_get_next_id(bps->cursor_node), &rv);
 			if (rv != BPTREE_OP_NODE_FOUND) {
-				*ksize = 0;
-				*vsize = 0;
 				return rv;
 			}
 			bps->cursor_pos = 0;
@@ -1031,18 +1144,13 @@ int bptree_index_next_internal(bptree_session *bps, void *k,
 
 	}
 
-	if(!bps->cursor_node->active[bps->cursor_pos])
+	if(!bpnode_is_active(bps->cursor_node, bps->cursor_pos))
 	{
 		bps->cursor_pos++;
 		return BPTREE_OP_KEY_DELETED;
 	}
 
-	memcpy(k, bps->cursor_node->keys[bps->cursor_pos],
-			bps->cursor_node->key_sizes[bps->cursor_pos]);
-	*ksize = bps->cursor_node->key_sizes[bps->cursor_pos];
-	memcpy(v, bps->cursor_node->values[bps->cursor_pos],
-			bps->cursor_node->value_sizes[bps->cursor_pos]);
-	*vsize = bps->cursor_node->value_sizes[bps->cursor_pos];
+	bpnode_pop_kv(bps->cursor_node, bps->cursor_pos, kv);
 
 	bps->cursor_pos++;
 
@@ -1057,6 +1165,8 @@ int bptree_index_next_internal(bptree_session *bps, void *k,
 int bptree_index_next_mget(bptree_session *bps,
 		bptree_mget_result **bmres, int16_t *rows, int *buf_sz)
 {
+	return BPTREE_OP_FAIL;
+/* TODO Re-implement
 	int rv, fetched;
 	int32_t ksize, vsize;
 	unsigned char k[MAX_TRANSACTION_SIZE/2];
@@ -1105,8 +1215,8 @@ int bptree_index_next_mget(bptree_session *bps,
 	}
 	*rows = fetched;
 	return BPTREE_OP_KEY_FOUND;
+*/
 }
-
 
 /*@
  * Start at the front of the index but set the cursor so that the following
@@ -1133,6 +1243,7 @@ int bptree_index_first(bptree_session *bps, void *k,
 	int rv;
 	bptree_node *root;
 	bptree_meta_node *bpm = NULL;
+	bptree_key_val kv;
 
 	rv = bptree_read_root(bps, &bpm, &root);
 	if (rv != BPTREE_OP_NODE_FOUND)
@@ -1141,13 +1252,19 @@ int bptree_index_first(bptree_session *bps, void *k,
 		*vsize = 0;
 		return rv;
 	}
-
-	rv = bptree_index_first_recursive(bps, k, ksize, v, vsize, root);
+	kv.k = k;
+	kv.v = v;
+	rv = bptree_index_first_recursive(bps, &kv, root);
 	if (rv == BPTREE_OP_KEY_DELETED)
 	{
-		rv = bptree_index_next(bps,k,ksize,v,vsize);
+		rv = bptree_index_next(bps,k, &kv.ksize, v, &kv.vsize);
 	}
-	if(rv != BPTREE_OP_KEY_FOUND)
+	if(rv == BPTREE_OP_KEY_FOUND)
+	{
+		*ksize = kv.ksize;
+		*vsize = kv.vsize;
+	}
+	else
 	{
 		*ksize = 0;
 		*vsize = 0;
@@ -1156,302 +1273,39 @@ int bptree_index_first(bptree_session *bps, void *k,
 	free_meta_node(&bpm);
 	return rv;
 }
-static int bptree_index_first_recursive(bptree_session *bps, void *k,
-		int32_t *ksize, void *v, int32_t *vsize, bptree_node *n)
+static int bptree_index_first_recursive(bptree_session *bps,
+					bptree_key_val *kv, bptree_node *n)
 {
 	bptree_node *next;
 	int rv;
 #ifdef DEFENSIVE_MODE
-	assert(are_key_and_value_sizes_valid(n));
+	assert(is_node_sane(n) == 0);
 #endif
-	if (n->leaf)
+	if (bpnode_is_leaf(n))
 	{
-		if (n->key_count == 0)
+		if (bpnode_is_empty(n))
 		{
 			bps->eof = 1;
-			assert(bps->cursor_node == NULL); // nothing should have set
+			//assert(bps->cursor_node == NULL); // nothing should have set
 			return BPTREE_OP_EOF; // tree is empty
 		}
 		// In case our tree has only one element
-		if (n->key_count == 1) bps->eof = 1;
-		*ksize = n->key_sizes[0];
-		*vsize = n->value_sizes[0];
-		memcpy(k, n->keys[0], n->key_sizes[0]);
-		memcpy(v, n->values[0], n->value_sizes[0]);
+		if (bpnode_size(n) == 1) bps->eof = 1;
+		bpnode_pop_kv(n, 0, kv);
 		bps->cursor_pos = 1;
 		bps->cursor_node = copy_node(n);
+		if(!bpnode_is_active(n, 0)) return BPTREE_OP_KEY_DELETED;
 		return BPTREE_OP_KEY_FOUND;
 	}
 	else
 	{
-		next = read_node(bps, n->children[0], &rv);
+		next = read_node(bps, bpnode_get_child_id(n, 0), &rv);
 		if (rv != BPTREE_OP_NODE_FOUND) return rv;
-		rv = bptree_index_first_recursive(bps, k, ksize, v, vsize,
-				next);
+		rv = bptree_index_first_recursive(bps, kv, next);
 		free_node(&next);
 		return rv;
 	}
 }
-
-static int node_is_full(bptree_node* n)
-{
-	return (n->key_count == (BPTREE_NODE_SIZE));
-}
-
-/***
- * Methods for (un)marshalling b+tree cell and header data to byte buffers */
-void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
-{
-	int i;
-    msgpack_sbuffer *buffer = msgpack_sbuffer_new();
-    msgpack_packer *pck = msgpack_packer_new(buffer, msgpack_sbuffer_write);
-    msgpack_sbuffer_clear(buffer);
-
-    msgpack_pack_int32(pck, bpm->execution_id);
-    msgpack_pack_raw(pck, sizeof(uuid_t));
-    msgpack_pack_raw_body(pck, bpm->root_key, sizeof(uuid_t));
-    msgpack_pack_int16(pck, bpm->bpt_id);
-	
-	msgpack_packer_free(pck);
-	*bsize = buffer->size;
-	void *b = buffer->data;
-	free(buffer);
-	return b;
-}
-
-bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
-{
-    msgpack_zone z;
-    msgpack_object obj;
-    msgpack_unpack_return ret;
-	int rv;
-	size_t offset = 0;
-	bptree_meta_node *bpm;
-	
-    msgpack_zone_init(&z, 4096);
-	if (buf == NULL) return NULL;
-	bpm = malloc(sizeof(bptree_meta_node));
-	
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    bpm->execution_id =  (int32_t) obj.via.i64;
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(bpm->root_key, obj.via.raw.ptr, sizeof(uuid_t));
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    bpm->bpt_id = (int16_t) obj.via.i64;
-	
-	msgpack_zone_destroy(&z);
-	
-	if (ret != MSGPACK_UNPACK_SUCCESS) return NULL;
-	return bpm;
-
-}
-
-// Pack all non-dynamic array stuff first, in the order of the struct def
-void * marshall_bptree_node(bptree_node *n, size_t *bsize)
-{
-	assert(is_node_sane(n));
-
-	int i;
-    /* creates buffer and serializer instance. */
-    msgpack_sbuffer *buffer = msgpack_sbuffer_new();
-    msgpack_packer *pck = msgpack_packer_new(buffer, msgpack_sbuffer_write);
-    msgpack_sbuffer_clear(buffer);
-
-    msgpack_pack_raw(pck, sizeof(uuid_t));
-    msgpack_pack_raw_body(pck, n->self_key, sizeof(uuid_t));
-    msgpack_pack_int16(pck, n->key_count);
-    msgpack_pack_int16(pck, n->leaf);
-    msgpack_pack_raw(pck, sizeof(uuid_t));
-    msgpack_pack_raw_body(pck, n->parent, sizeof(uuid_t));
-    msgpack_pack_raw(pck, sizeof(uuid_t));
-    msgpack_pack_raw_body(pck, n->prev_node, sizeof(uuid_t));
-    msgpack_pack_raw(pck, sizeof(uuid_t));
-    msgpack_pack_raw_body(pck, n->next_node, sizeof(uuid_t));
-    msgpack_pack_raw(pck, BPTREE_NODE_SIZE);
-    msgpack_pack_raw_body(pck, n->active, BPTREE_NODE_SIZE);
-
-    // Only pack data that is relevant based on the # of keys in this node
-
-	for (i = 0; i < n->key_count; i++)
-	{
-		msgpack_pack_int32(pck, n->key_sizes[i]);
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		msgpack_pack_int32(pck, n->value_sizes[i]);
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		msgpack_pack_raw(pck, n->key_sizes[i]);
-		msgpack_pack_raw_body(pck, n->keys[i], n->key_sizes[i]);
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		msgpack_pack_raw(pck, n->value_sizes[i]);
-		msgpack_pack_raw_body(pck, n->values[i], n->value_sizes[i]);
-	}
-	if (!n->leaf)
-		for (i = 0; i <= n->key_count; i++) // Only write if non-leaf!
-		{
-			msgpack_pack_raw(pck, sizeof(uuid_t));
-			msgpack_pack_raw_body(pck, n->children[i], sizeof(uuid_t));
-		}
-
-	// Don't free the sbuffer completely, cause we'll pass the data directly to
-	// caller
-//    msgpack_sbuffer_free(buffer);
-    msgpack_packer_free(pck);
-    *bsize = buffer->size;
-    void *b = buffer->data;
-    free(buffer);
-	return b;
-}
-
-//@ Wrapper for the various implementations of serialization we may have */
-/* inline void * marshall_bptree_node(bptree_node *n, size_t *bsize)
-{
-#ifdef BPTREE_MARSHALLING_MSGPACK
-	return marshall_bptree_node_msgpack(n,bsize);
-#else
-	return marshall_bptree_node_tpl(n,bsize);
-#endif
-
-}
-*/
-
-
-bptree_node * unmarshall_bptree_node(const void *buf,
-		size_t sz, size_t *nsize)
-{
-    msgpack_zone z;
-    msgpack_zone_init(&z, 4096);
-    msgpack_object obj;
-    msgpack_unpack_return ret;
-
-	int i;
-	size_t offset = 0;
-	bptree_node *n = create_new_empty_bptree_node();
-	*nsize = sizeof(bptree_node);
-
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(n->self_key, obj.via.raw.ptr, sizeof(uuid_t));
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    n->key_count =  (int16_t) obj.via.i64;
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    n->leaf =  (int16_t) obj.via.i64;
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(n->parent, obj.via.raw.ptr, sizeof(uuid_t));
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(n->prev_node, obj.via.raw.ptr, sizeof(uuid_t));
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(n->next_node, obj.via.raw.ptr, sizeof(uuid_t));
-    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-    memcpy(n->active, obj.via.raw.ptr, BPTREE_NODE_SIZE);
-
-    // Only unpack data that is relevant based on the # of keys in this node
-
-	for (i = 0; i < n->key_count; i++)
-	{
-		ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-		n->key_sizes[i] = (int32_t) obj.via.i64;
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-		n->value_sizes[i] = (int32_t) obj.via.i64;
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-		*nsize+= obj.via.raw.size;
-		n->keys[i] = malloc(obj.via.raw.size);
-		memcpy(n->keys[i], obj.via.raw.ptr, obj.via.raw.size);
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-		*nsize+= obj.via.raw.size;
-		n->values[i] = malloc(obj.via.raw.size);
-		memcpy(n->values[i], obj.via.raw.ptr, obj.via.raw.size);
-	}
-	if (!n->leaf)
-		for (i = 0; i <= n->key_count; i++)
-		{
-			ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
-			memcpy(n->children[i], obj.via.raw.ptr, sizeof(uuid_t));
-		}
-	assert(ret == MSGPACK_UNPACK_SUCCESS);
-	msgpack_zone_destroy(&z);
-	return n;
-}
-
-
-// I have no idea why I wrote this second method. 
-bptree_node * unmarshall_bptree_node_msgpack2(const void *buf,
-		size_t sz, size_t *nsize)
-{
-    msgpack_unpacked msg;
-    msgpack_unpacked_init(&msg);
-    msgpack_zone z;
-    msgpack_zone_init(&z, 4096);
-
-	int i, rv;
-	size_t offset = 0;
-	bptree_node *n = create_new_empty_bptree_node();
-	*nsize = sizeof(bptree_node);
-
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    memcpy(n->self_key, msg.data.via.raw.ptr, sizeof(uuid_t));
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    n->key_count =  (int16_t) msg.data.via.i64;
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    n->leaf =  (int16_t) msg.data.via.i64;
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    memcpy(n->parent, msg.data.via.raw.ptr, sizeof(uuid_t));
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    memcpy(n->prev_node, msg.data.via.raw.ptr, sizeof(uuid_t));
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    memcpy(n->next_node, msg.data.via.raw.ptr, sizeof(uuid_t));
-    rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-    memcpy(n->active, msg.data.via.raw.ptr, BPTREE_NODE_SIZE);
-
-    // Only unpack data that is relevant based on the # of keys in this node
-
-	for (i = 0; i < n->key_count; i++)
-	{
-		rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-		n->key_sizes[i] = (int32_t) msg.data.via.i64;
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-		n->value_sizes[i] = (int32_t) msg.data.via.i64;
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-		*nsize+= msg.data.via.raw.size;
-		n->keys[i] = malloc(msg.data.via.raw.size);
-		memcpy(n->keys[i], msg.data.via.raw.ptr, msg.data.via.raw.size);
-	}
-	for (i = 0; i < n->key_count; i++)
-	{
-		rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-		*nsize+= msg.data.via.raw.size;
-		n->values[i] = malloc(msg.data.via.raw.size);
-		memcpy(n->values[i], msg.data.via.raw.ptr, msg.data.via.raw.size);
-	}
-	if (!n->leaf)
-		for (i = 0; i <= n->key_count; i++)
-		{
-			rv = msgpack_unpack_next(&msg, buf, sz, &offset);
-			memcpy(n->children[i], msg.data.via.raw.ptr, sizeof(uuid_t));
-		}
-
-	msgpack_unpacked_destroy(&msg);
-	return n;
-}
-
 
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root)
@@ -1464,59 +1318,11 @@ int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 	*root = read_node(bps, (*bpm)->root_key, &rv);
 	if (rv != BPTREE_OP_NODE_FOUND) return rv;
 
-	assert(uuid_is_null((*root)->parent));
-	assert(uuid_compare((*bpm)->root_key, (*root)->self_key) == 0);
+	//assert(uuid_is_null((*root)->parent));
+	assert(uuid_compare((*bpm)->root_key, bpnode_get_id(*root)) == 0);
 
 	return rv;
 }
-
-//inline
-int is_node_sane(bptree_node *n)
-{
-	int i =0;
-	// TODO Embed all the asserts inside this function
-	// Do some sanity checking of the node; these two checks should
-	// probably be enough to catch most cases of corrupt or uninitialized nodes
-	if (n == NULL) return 0;
-	if (n->key_count < 0 || n->key_count > BPTREE_NODE_SIZE) return 0;
-	// Ensure we don't have any weird corner cases with the children of node
-	if (!n->leaf && n->key_count > 0)
-		if (uuid_is_null(n->children[n->key_count]) ||
-				uuid_is_null(n->children[0])) return 0;
-
-	for (i = 0; i < n->key_count; i++)
-	{
-		if(n->keys[i] == NULL) return 0;
-		if(n->values[i] == NULL) return 0;
-		if(n->key_sizes[i] < 0) return 0;
-		if(n->value_sizes[i] < 0) return 0;
-	}
-
-	if(!n->leaf) {
-		for (i = 0; i <= n->key_count; i++) {
-			if(uuid_is_null(n->children[i])) return 0;
-		}
-	}
-
-	// Make sure anything outside boundaries is not filled with anything
-	for (i = n->key_count; i < BPTREE_NODE_SIZE; i++)
-	{
-		if(n->keys[i] != NULL || n->values[i] != NULL) return 0;
-		if(n->key_sizes[i] != -1 || n->value_sizes[i] != -1) return 0;
-		if(!uuid_is_null(n->children[i+1])) return 0;
-	}
-	if(n->key_count < BPTREE_NODE_SIZE &&
-			!uuid_is_null(n->children[BPTREE_NODE_SIZE]) ) return 0;
-	return 1;
-}
-
-int is_correct_node(bptree_node *n, uuid_t node_key)
-{
-	// Did we actually get the right node back?
-	if (n == NULL || node_key == NULL) return 0;
-	return uuid_compare(n->self_key, node_key) == 0;
-}
-
 /**
  * Returns:
  * BPTREE_OP_TAPIOCA_NOT_READY - if tapioca key not ready yet
@@ -1575,7 +1381,7 @@ bptree_node * read_node(bptree_session *bps,
 		    inflateEnd(&strm);
 		}
 		n = unmarshall_bptree_node(v, vsize, &nsize);
-		assert(nsize >= sizeof(bptree_node));
+		//assert(nsize >= sizeof(bptree_node));
 		val_free(_v);
 		if(n == NULL)
 		{
@@ -1588,9 +1394,8 @@ bptree_node * read_node(bptree_session *bps,
 
 #ifdef DEFENSIVE_MODE
 	assert(is_correct_node(n, node_key));
-	assert(is_node_sane(n));
-	assert(is_cell_ordered(bps,n));
-	assert(are_key_and_value_sizes_valid(n));
+	assert(is_node_sane(n) == 0);
+	assert(is_node_ordered(bps,n) == 0);
 #endif
 	return n;
 }
@@ -1604,7 +1409,7 @@ bptree_node * read_node(bptree_session *bps,
 int write_node(bptree_session *bps, bptree_node* n)
 {
 	size_t ksize, vsize;
-	int rv;
+	int rv, rva;
 	void *k;
 	void *v;
 	key _k;
@@ -1612,11 +1417,21 @@ int write_node(bptree_session *bps, bptree_node* n)
 	unsigned char v_comp[BPTREE_MAX_VALUE_SIZE];
 
 #ifdef DEFENSIVE_MODE
-	assert(is_node_sane(n));
-	assert(is_cell_ordered(bps,n));
+	rva = is_node_sane(n);
+	if(rva != 0) {
+		printf("Tried to write bad node, err %d\n", rva);
+		dump_node_info(bps, n);
+	}
+	assert(rva == 0);
+	rva = is_node_ordered(bps,n);
+	if(rva != 0) {
+		printf("Tried to write bad node, err %d\n", rva);
+		dump_node_info(bps, n);
+	}
+	assert(rva == 0);
 #endif
 
-	k = create_cell_key(bps, n->self_key, &ksize);
+	k = create_cell_key(bps, bpnode_get_id(n), &ksize);
 	v = marshall_bptree_node(n, &vsize);
 	if (k == NULL || v == NULL) return -1;
 	if (BPTREE_NODE_COMPRESSION)
@@ -1656,68 +1471,6 @@ int write_node(bptree_session *bps, bptree_node* n)
 	if (rv == 0) return BPTREE_OP_SUCCESS;
 	return BPTREE_OP_FAIL;
 }
-
-/** Copy all memory associated with node and return a new pointer */
-// TODO The probability that i implemented this correctly on teh first try
-// are not good. Double check.
-bptree_node *copy_node(bptree_node *n)
-{
-	assert(is_node_sane(n));
-	bptree_node *x;
-	//x = malloc(sizeof(bptree_node));
-	// Ensure we use the standard way of creating a new , uninitialized node
-	x = create_new_empty_bptree_node();
-	int i;
-	uuid_copy(x->self_key, n->self_key);
-	x->key_count = n->key_count;
-	x->leaf = n->leaf;
-	uuid_copy(x->parent, n->parent);
-	uuid_copy(x->prev_node, n->prev_node);
-	uuid_copy(x->next_node, n->next_node);
-	for (i = 0; i < n->key_count; i++)
-	{
-		x->key_sizes[i] = n->key_sizes[i];
-		x->value_sizes[i] = n->value_sizes[i];
-		x->keys[i] = malloc(x->key_sizes[i]);
-		x->values[i] = malloc(x->value_sizes[i]);
-		memcpy(x->keys[i], n->keys[i],n->key_sizes[i]);
-		memcpy(x->values[i], n->values[i],n->value_sizes[i]);
-		uuid_copy(x->children[i], n->children[i]);
-		x->active[i] = n->active[i];
-
-	}
-	uuid_copy(x->children[n->key_count], n->children[n->key_count]);
-//	x->write_count = n->write_count;
-//	x->last_version = n->last_version;
-	return x;
-}
-
-/** Free all memory associated with node */
-int free_node(bptree_node **n)
-{
-	if (*n == NULL) {
-		int you_done_something_wrong = 1;
-		assert(you_done_something_wrong == 0xDEADBEEF);
-	}
-	int i;
-	for (i = 0; i < (*n)->key_count; i++)
-	{
-		free((*n)->keys[i]);
-		free((*n)->values[i]);
-		(*n)->keys[i] = NULL;
-		(*n)->values[i] = NULL;
-	}
-	free(*n);
-	*n = NULL;
-	return BPTREE_OP_SUCCESS;
-}
-
-void free_meta_node(bptree_meta_node **m)
-{
-	free(*m);
-	*m = NULL;
-}
-
 /** Reset/create contents of bptree handle; will need to be commited after
  * Returns:
  * BPTREE_OP_NODE_FOUND -- On success
@@ -1781,8 +1534,7 @@ int write_meta_node(bptree_session *bps, bptree_meta_node* bpm, bptree_node *roo
 
 	if (root != NULL)
 	{
-		assert(uuid_compare(bpm->root_key, root->self_key) == 0);
-		assert(uuid_is_null(root->parent));
+		//assert(uuid_compare(bpm->root_key, root->self_key) == 0);
 		if (write_node(bps, root) != BPTREE_OP_SUCCESS) return BPTREE_OP_FAIL;
 	}
 #ifdef TRACE_MODE
@@ -1793,15 +1545,61 @@ int write_meta_node(bptree_session *bps, bptree_meta_node* bpm, bptree_node *roo
 	return BPTREE_OP_SUCCESS;
 }
 
+bptree_meta_node * unmarshall_bptree_meta_node(const void *buf, size_t sz)
+{
+    msgpack_zone z;
+    msgpack_object obj;
+    msgpack_unpack_return ret;
+	int rv;
+	size_t offset = 0;
+	bptree_meta_node *bpm;
+	
+    msgpack_zone_init(&z, 4096);
+	if (buf == NULL) return NULL;
+	bpm = malloc(sizeof(bptree_meta_node));
+	
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    bpm->execution_id =  (int32_t) obj.via.i64;
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    memcpy(bpm->root_key, obj.via.raw.ptr, sizeof(uuid_t));
+    ret = msgpack_unpack(buf, sz, &offset,&z, &obj);
+    bpm->bpt_id = (int16_t) obj.via.i64;
+	
+	msgpack_zone_destroy(&z);
+	
+	if (ret != MSGPACK_UNPACK_SUCCESS) return NULL;
+	return bpm;
+
+}
+
+void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize)
+{
+	int i;
+	msgpack_sbuffer *buffer = msgpack_sbuffer_new();
+	msgpack_packer *pck = msgpack_packer_new(buffer, msgpack_sbuffer_write);
+	msgpack_sbuffer_clear(buffer);
+
+	msgpack_pack_int32(pck, bpm->execution_id);
+	msgpack_pack_raw(pck, sizeof(uuid_t));
+	msgpack_pack_raw_body(pck, bpm->root_key, sizeof(uuid_t));
+	msgpack_pack_int16(pck, bpm->bpt_id);
+
+	msgpack_packer_free(pck);
+	*bsize = buffer->size;
+	void *b = buffer->data;
+	free(buffer);
+	return b;
+}
+
 // In searches, assert that the tree obeys the properties we expect
 void assert_valid_parent_child_traversal(bptree_session *bps,
 		bptree_node *p, bptree_node *c, int i)
 {
 	// If c is a leaf, then the first key of c should match p[i]
 	bptree_key_val *kv_p, *kv_c;
-	get_key_val_from_node(p, i, kv_p);
-	get_key_val_from_node(c, i, kv_c);
-	if (c->leaf) {
+	bpnode_get_kv_ref(p, i, kv_p);
+	bpnode_get_kv_ref(c, i, kv_c);
+	if (bpnode_is_leaf(c)) {
 		if(bptree_compar_keys(bps, kv_p, kv_c) != 0) assert(0);
 	}
 	// if c is not a leaf, then c[0] should be strictly greater than p[i]
@@ -1809,225 +1607,6 @@ void assert_valid_parent_child_traversal(bptree_session *bps,
 	{
 		if(bptree_compar_keys(bps, kv_p, kv_c) <= 0) assert(0);
 	}
-}
-
-#ifdef TRACE_MODE
-
-void get_trace_file(void)
-{
-	if (!file_opened)
-	{
-		char fl[128];
-		sprintf(fl, "/tmp/tapioca-%d.trc", getpid());
-		trace_fp = fopen((const char *)fl, "w");
-		file_opened = 1;
-	}
-}
-
-void prepend_client_and_whitespace(bptree_session *bps, int lvl)
-{
-	int i;
-	fprintf(trace_fp, "%d |", bps->tapioca_client_id);
-	for (i=0; i<lvl; i++) fprintf(trace_fp, "  ");
-}
-
-/*@ Write trace-appropriate data into s for the given node */
-void write_node_info(bptree_session *bps, char *s, bptree_node *n)
-{
-	int i;
-	char *sptr = s;
-	char uu[40];
-	char c[512];
-	bzero(c,512);
-	uuid_unparse(n->self_key, uu);
-	uu[8] = '\0'; // print first 8 bytes...
-	for (i=0; i<n->key_count; i++)
-	{
-		bptree_key_value_to_string(bps, n->keys[i], n->values[i],
-				n->key_sizes[i], n->value_sizes[i], c);
-		// Unsafe. Oh well
-		strcpy(sptr, c);
-		sptr += strlen(c);
-		sprintf(sptr, ", ");
-		sptr += 2;
-	}
-	if (n->key_count > 0)
-	{
-		sptr -= 2;
-		bzero(sptr, 2);
-	}
-	sprintf(sptr, " Cnt: %d L: %d ID: %s WC: %d Ver: %d ST: %d ",
-			n->key_count, n->leaf, uu, n->write_count, n->last_version,
-			bps->t->st);
-}
-
-int write_insert_to_trace(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv, int pos, int lvl)
-{
-	int i;
-	unsigned char *kk, *vv;
-	int16_t bpt_id;
-	size_t nsize;
-	char uu[40],res[20];
-	char nodestr[4096];
-	get_trace_file();
-
-	bptree_key_value_to_string_kv(bps, kv, nodestr);
-	prepend_client_and_whitespace(bps, lvl);
-	fprintf(trace_fp, "Insert key: %s pos %d lvl %d\n", nodestr, pos, lvl);
-	bzero(nodestr, 4096);
-
-	// X
-	prepend_client_and_whitespace(bps, lvl);
-	write_node_info(bps, nodestr, x);
-	fprintf(trace_fp, "X  : %s\n", nodestr);
-
-	bzero(nodestr, 4096);
-
-	return 0;
-}
-
-int write_split_to_trace(bptree_session *bps, bptree_node *x, bptree_node *y,
-		bptree_node *new, int pos, int lvl)
-{
-	int i;
-	unsigned char *kk, *vv;
-	int16_t bpt_id;
-	size_t nsize;
-	char uu[40],res[20];
-	char nodestr[4096];
-	get_trace_file();
-
-	prepend_client_and_whitespace(bps, lvl);
-	if (new == NULL) fprintf(trace_fp, "Pre-Split pos %d lvl %d\n", pos, lvl);
-	if (new != NULL) fprintf(trace_fp, "Post-Split pos %d lvl %d\n", pos, lvl);
-
-	// X
-	prepend_client_and_whitespace(bps, lvl);
-	write_node_info(bps, nodestr, x);
-	fprintf(trace_fp, "X  : %s\n", nodestr);
-	bzero(nodestr, 4096);
-
-	// Y
-	prepend_client_and_whitespace(bps, lvl);
-	write_node_info(bps, nodestr, y);
-	fprintf(trace_fp, "Y  : %s\n", nodestr);
-	bzero(nodestr, 4096);
-
-	// New
-	if(new != NULL)
-	{
-		prepend_client_and_whitespace(bps, lvl);
-		write_node_info(bps, nodestr, new);
-		fprintf(trace_fp, "New: %s\n", nodestr);
-	}
-
-	return 0;
-}
-
-int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client)
-{
-	bptree_node *n;
-	bptree_meta_node *m;
-	unsigned char *kk, *vv;
-	int16_t bpt_id;
-	size_t nsize;
-	char uu[40],res[20];
-	get_trace_file();
-	switch (type) {
-		// Three different commit-types (1,-1,-2)
-		case T_COMMITTED:
-			fprintf(trace_fp, "%d | COMMIT\n", t->client_id);
-			break;
-		case T_ABORTED:
-			fprintf(trace_fp, "%d | ABORT\n", t->client_id);
-			break;
-		case T_ERROR:
-			fprintf(trace_fp, "%d | ERROR\n", t->client_id);
-			break;
-		case 0: // o/w this was a put
-			kk = k->data;
-			vv = v->data;
-			if(*kk == BPTREE_NODE_PACKET_HEADER)
-			{
-				memcpy(&bpt_id, kk+1, sizeof(int16_t));
-				n = unmarshall_bptree_node(vv, v->size, &nsize);
-				uuid_unparse(n->self_key, uu);
-				fprintf(trace_fp, "%d |\tBPT:%d\t%s\tCnt:%d\tLeaf:%d"
-									"\tWriteCnt %d P/C Cl_id %d,%d\n",
-						t->client_id, bpt_id, uu, n->key_count, n->leaf,
-						n->write_count, prev_client, n->tapioca_client_id );
-			} else if(*kk == BPTREE_META_NODE_PACKET_HEADER)
-			{
-				memcpy(&bpt_id, kk+1, sizeof(int16_t));
-				m = unmarshall_bptree_meta_node(vv, v->size);
-				uuid_unparse(m->root_key, uu);
-				fprintf(trace_fp, "%d |\tBPT:%d\tMeta:%s\n",
-						t->client_id, bpt_id, uu);
-			}
-
-			break;
-		default:
-			break;
-	}
-	return 0;
-}
-#endif
-
-
-void dump_node_info(bptree_session *bps, bptree_node *n)
-{
-	int i;
-	char s1[512];
-	char uuid_out[40];
-	bptree_key_val kv;
-	if (n == NULL) {
-		printf ("\tB+tree node is null!\n");
-		return;
-	}
-	if (!is_bptree_node_sane(n))
-		printf("\tB+tree node failed sanity check!!!");
-
-	printf("\tLeaf: %d\n", n->leaf);
-
-	uuid_unparse(n->self_key, uuid_out);
-	printf("\tSelf key: %s\n", uuid_out);
-	uuid_unparse(n->parent, uuid_out);
-	printf("\tParent key: %s\n", uuid_out);
-	uuid_unparse(n->next_node, uuid_out);
-	printf("\tNext key: %s\n", uuid_out);
-	uuid_unparse(n->prev_node, uuid_out);
-	printf("\tPrev key: %s\n", uuid_out);
-
-	if (!are_key_and_value_sizes_valid(n))
-		printf("\tB+tree node k/v sizes are invalid!!!");
-
-	printf("\tKey count: %d\n", n->key_count);
-	printf("\tKey/value sizes: ");
-	for (i =0; i < n->key_count; n++)
-		printf ("(%d, %d), ", n->key_sizes[i], n->value_sizes[i]);
-
-	printf("\n\tKeys:\n");
-	for (i =0; i < n->key_count; n++)
-	{
-		get_key_val_from_node(n, i, &kv);
-		bptree_key_value_to_string_kv(bps, &kv, s1);
-		printf(" %s ", s1);
-	}
-
-	if(!n->leaf)
-	{
-		printf("\n\tChild nodes:\n");
-		for (i =0; i <= n->key_count; n++)
-		{
-			uuid_unparse(n->children[i], uuid_out);
-			printf("\t\t%d: %s \n", i, uuid_out);
-		}
-	}
-
-	printf("\n");
-
-	fflush(stdout);
 }
 
 /** See get_unique_key() for details on how the cell_id is generated;
@@ -2063,62 +1642,77 @@ void * create_meta_key(bptree_session *bps, size_t *ksize)
 	return k;
 }
 
-int is_valid_traversal(bptree_session *bps, bptree_node *x, bptree_node *n,int i)
+void free_meta_node(bptree_meta_node **m)
 {
-	int rv, c;
+	free(*m);
+	*m = NULL;
+}
+
+
+void traversal_check(bptree_session *bps, bptree_node *x, bptree_node *n,int i)
+{
+	int rv = is_valid_traversal(bps, x, n, i);
+	if(rv != 0) {
+		printf ("Caught what looks to be an invalid traversal!\n");
+		dump_node_info(bps,x);
+		printf("\nchild:\n");
+		dump_node_info(bps,n);
+	}
+}
+
 /*	 Similar to our split cells method;
  *  If we are traversing to a leaf node, the traversal key should be the same
  *   as the first key in the child, otherwise, it should be strictly greater
  *    Two other cases:
- *    i = 0 or i = x->key_count are boundary cases
+ *    i = 0 or i = bpnode_size(x) are boundary cases
 	 */
+int is_valid_traversal(bptree_session *bps, bptree_node *p, bptree_node *c,int i)
+{
+	int rv, pos;
+	bptree_key_val p_kv, c_kv;
 #ifndef DEFENSIVE_MODE
-	return 1;
+	return 0;
 #endif
 
-	if(x->key_count <= 0) return 1;
+	if(bpnode_size(p) <= 0) return -1;
 
 	if (i == 0)
 	{
 		// If this is a left hand traversal, the max value of n should be
 		// strictly less than the first key of x
-		c = n->key_count -1;
-		rv = bptree_compar(bps, x->keys[0], n->keys[c],
-				x->values[0], n->values[c],
-				x->value_sizes[0], n->value_sizes[c], bps->num_fields);
-		assert (rv > 0);
-		//if (rv <= 0) return 0;
-		return 1;
+		pos = bpnode_size(c) -1;
+		bpnode_get_kv_ref(p, 0, &p_kv);
+		bpnode_get_kv_ref(c, pos, &c_kv);
+		rv = bptree_compar_keys(bps, &p_kv, &c_kv);
+		if (rv <= 0) return -2;
+		else return 0;
 	}
 	else
 	{
-//		if(i == x->key_count) c--;
-		c = i-1;
-		rv = bptree_compar(bps, x->keys[c], n->keys[0],
-				x->values[c], n->values[0],
-				x->value_sizes[c], n->value_sizes[0], bps->num_fields);
+		pos = i-1;
+		bpnode_get_kv_ref(p, pos, &p_kv);
+		bpnode_get_kv_ref(c, 0, &c_kv);
+		rv = bptree_compar_keys(bps, &p_kv, &c_kv);
 	}
-	if (n->leaf)
+	
+	if (bpnode_is_leaf(c) && rv > 0)
 	{
-		assert(rv == 0);
-		if (rv != 0) return 0;
+		return -3;
 	}
-	else
+	else if (!bpnode_is_leaf(c) && rv >= 0)
 	{
-		assert(rv < 0);
-		if (rv >= 0) return 0;
+		return -5;
 	}
 
-	return 1;
+	return 0;
 }
-
-int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i,
-		bptree_node *y, bptree_node *n)
+	
+int are_split_cells_valid(bptree_session *bps, bptree_node* p, int i,
+		bptree_node *cl, bptree_node *cr)
 {
-	// Same var names as split;
-	// x should be parent of y and new (y: left, new : right)
-	int rv;
-//	size_t sz;
+#ifndef DEFENSIVE_MODE
+	return 0;
+#endif	
 	/*
 	     	   N   W
 	 N  P  Q  R  S  T  U  V  Z
@@ -2134,77 +1728,45 @@ int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i,
 	           |     |
 	   N  P  Q  R      T  U  V  Z
 
+	 Check that the 
 	 */
 
-	if (y->key_count > 0) {
-		// In rare cases, y could be empty
-		rv = bptree_compar(bps, y->keys[y->key_count - 1], x->keys[i],
-				y->values[y->key_count - 1], x->values[i],
-				y->value_sizes[y->key_count - 1], x->value_sizes[i], 
-				bps->num_fields);
-		//if (rv >= 0) return 0; // i.e. R strictly less than S
-		assert(rv < 0);
-	}
+	int rv_l, rv_r;
+	bptree_key_val p_kv, cl_kv, cr_kv;
+	
+	bpnode_get_kv_ref(p, i, &p_kv);
+	bpnode_get_kv_ref(cl, bpnode_size(cl)-1, &cl_kv);
+	bpnode_get_kv_ref(cr, 0, &cr_kv);
+	
+	rv_l = bptree_compar_keys(bps, &p_kv, &cl_kv);
+	rv_r = bptree_compar_keys(bps, &p_kv, &cr_kv);
 
-	rv = bptree_compar(bps, x->keys[i], n->keys[0],
-			x->values[i], n->values[0],
-			x->value_sizes[i], n->value_sizes[0], 
-			bps->num_fields);
-
+	if (rv_l < 0) return -1; // R strictly less than S in both cases above
+	
 	// Rewrite these checks as asserts
-	//if (y->leaf && rv != 0) return 0; // S should be in root and new[0]
-	//if (!y->leaf && rv >= 0) return 0; // i.e. T strictly less than S
-	assert (y->leaf ? rv == 0 : rv < 0); // S should be in root and new[0]
-//	assert (!y->leaf && rv < 0); // i.e. T strictly less than S
+	if (bpnode_is_leaf(cl) && rv_r != 0) return -2; // S should be in root and new[0]
+	if (!bpnode_is_leaf(cl) && rv_r >= 0) return -3; // i.e. T strictly less than S
 
-//	if (y->key_count != BPTREE_MIN_DEGREE-1 ||
-	//		n->key_count != BPTREE_MIN_DEGREE -1 + n->leaf) return 0;
-	assert(y->key_count == BPTREE_MIN_DEGREE-1 );
-	assert(n->key_count == BPTREE_MIN_DEGREE -1 + n->leaf);
-	return 1;
+	if(bpnode_size(cl) != BPTREE_MIN_DEGREE-1 ) return -4;
+	if(bpnode_size(cr) != BPTREE_MIN_DEGREE -1 + bpnode_is_leaf(cr)) return -5;
+	return 0;
 }
-//inline
-int is_cell_ordered(bptree_session *bps, bptree_node* y)
+
+int is_node_ordered(bptree_session *bps, bptree_node* y)
 {
+#ifndef DEFENSIVE_MODE
+	return 0;
+#endif	
 	int i, rv;
-//	size_t sz;
-	void *a, *b, *v1, *v2;
-	for (i = 0; i < y->key_count - 1; i++)
+	bptree_key_val kv1, kv2;
+	for (i = 0; i < bpnode_size(y) - 1; i++)
 	{
-		a = y->keys[i];
-		b = y->keys[i + 1];
-		v1 = y->values[i];
-		v2 = y->values[i + 1];
-		rv = bptree_compar(bps, a, b, v1, v2,
-				y->value_sizes[i], y->value_sizes[i+1], bps->num_fields);
-		//if (rv >= 0) return 0; // if two kev/values are the same we have a prob!
-		assert(rv < 0); // if two kev/values are the same we have a prob!
+		bpnode_get_kv_ref(y, i, &kv1);
+		bpnode_get_kv_ref(y, i+1, &kv2);
+		rv = bptree_compar_keys(bps, &kv1, &kv2);
+		if (rv >= 0) return (-1 * i); // if two key/values are the same we have a prob!
 	}
-
-	return 1;
-}
-
-int is_bptree_node_sane(bptree_node* n)
-{
-	// For now just make sure that we have a valid child for a non leaf
-	if (!n->leaf && uuid_is_null(n->children[n->key_count])) return 0;
-	return 1;
-
-}
-
-int are_key_and_value_sizes_valid(bptree_node* n)
-{
-	int i;
-	for (i = 0; i < n->key_count; i++)
-	{
-		if (n->key_sizes[i] > BPTREE_MAX_VALUE_SIZE
-			|| n->value_sizes[i]> BPTREE_MAX_VALUE_SIZE
-			|| n->key_sizes[i]< -1
-			|| n->value_sizes[i] < -1)
-			return 0;
-	}
-
-	return 1;
+	return 0;
 }
 
 void print_trace (void)
@@ -2225,12 +1787,6 @@ void print_trace (void)
   free (strings);
   printf("Trying to write with backtrace_symbols_fd to stdout:\n");
   backtrace_symbols_fd(array, size, STDOUT_FILENO);
-}
-
-/*@ Wrapper for uuid_generate */
-static void get_unique_key(bptree_session *bps, uuid_t uu)
-{
-	uuid_generate(uu);
 }
 
 //***** Comparison Functions */
@@ -2274,15 +1830,15 @@ inline int int64cmp(const void *i1, const void *i2, size_t v_ignored)
 	else { return 0; }
 }
 
-/* TODO Integrate this more sensibly with the collation stuff in mysql;
- * for now we just need a quick and easy way to hack off the first 1-2 bytes
- * that include the string length for <255 or <64k length strings*/
+/* Use this exclusively with CHAR fixed-length types in MySQL
+We now no longer pass in the length because CHAR types are supposed to
+be padded with spaces at the end */ 
 inline int strncmp_mysql(const void *i1, const void *i2, size_t sz)
 {
-	size_t len = sz - (sz > 255 ? 2 : 1);
-	const char *a = (const char*) i1 + (sz > 255 ? 2 : 1);
-	const char *b = (const char*) i2 + (sz > 255 ? 2 : 1);;
-	return strncmp(a,b,len);
+	// size_t len = sz - (sz > 255 ? 2 : 1);
+	//const char *a = (const char*) i1 + (sz > 255 ? 2 : 1);
+	//const char *b = (const char*) i2 + (sz > 255 ? 2 : 1);;
+	return strncmp(i1,i2,sz);
 }
 
 // VARCHARs in MySQL always use 2-byte lengths

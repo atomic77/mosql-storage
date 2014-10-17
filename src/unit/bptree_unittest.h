@@ -16,7 +16,7 @@
 */
 
 
-#include "gtest.h"
+#include <gtest/gtest.h>
 #define LARGE_BUFFER_SZ 128000
 
 extern "C" {
@@ -33,17 +33,15 @@ class BptreeTestBase: public testing::Test {
 protected:
     bptree_session *bps;
 	tapioca_bptree_id tbpt_id;
-	enum bptree_open_flags open_flags;
-	
 	int rv, rv1, rv2, keys;
-	char k[LARGE_BUFFER_SZ];
-	char v[LARGE_BUFFER_SZ];
+	char k[512];
+	char v[512];
 	int32_t ksize, vsize;
 	const char *hostname;
 	int port;
 	bool DBUG;
 	bool local_storage; // whether we connect to an external or our own
-    tapioca_handle* th;
+	tapioca_handle* th;
 
 	void insertSampleData() {
 		
@@ -62,13 +60,20 @@ protected:
 
 	}
 	
-	tapioca_bptree_id createNewTree(tapioca_bptree_id tbpt_id) {
-		open_flags = BPTREE_OPEN_OVERWRITE;
+	void createNewTree(tapioca_bptree_id tbpt_id, 
+					bptree_open_flags open_flags,
+					bptree_insert_flags insert_flags) 
+	{
 		bps = (bptree_session *) malloc(sizeof(bptree_session));
 		rv = tapioca_bptree_initialize_bpt_session(th, tbpt_id, open_flags,
-												   BPTREE_INSERT_UNIQUE_KEY);
+						  insert_flags);
 		this->tbpt_id = tbpt_id;
 		EXPECT_EQ(tbpt_id, rv);
+	}
+	
+	void createNewTree(tapioca_bptree_id tbpt_id) {
+		createNewTree(tbpt_id, BPTREE_OPEN_OVERWRITE, 
+			      BPTREE_INSERT_UNIQUE_KEY);
 	}
 	
 	virtual void SetUp() {
@@ -79,15 +84,15 @@ protected:
 			system("cd ..; bash scripts/launch_all.sh --kill-all --clear-db > /dev/shm/mosql-tst.log; cd -");
 			sleep(1);
 		}
-		memset(k, 0,LARGE_BUFFER_SZ);
-		memset(v, 0,LARGE_BUFFER_SZ);
+		memset(k, 0,512);
+		memset(v, 0,512);
 		hostname = "127.0.0.1";
 		port = 5555;
 		keys = 1000;
 		DBUG = false;
 		// Create a default tree for all test cases; some may create their own
-        th = tapioca_open(hostname, port);
-        EXPECT_NE(th, (tapioca_handle*)NULL);
+		th = tapioca_open(hostname, port);
+		EXPECT_NE(th, (tapioca_handle*)NULL);
 		createNewTree(1000);
 	}
 	
@@ -105,9 +110,9 @@ protected:
         tapioca_close(th);
 		if (local_storage) 
 		{
-			system("killall -q cm tapioca example_acceptor example_proposer rec");
+			system("killall -q cm tapioca example_acceptor example_proposer rec gdb");
 			sleep(2);
-			system("killall -q -9 cm tapioca example_acceptor example_proposer rec");
+			system("killall -q -9 cm tapioca example_acceptor example_proposer rec gdb");
 		}
 	}
 

@@ -24,8 +24,9 @@
 
 #include "transaction.h"
 #include "tapioca_btree.h"
-#include <msgpack.h>
+#include "bptree_node.h"
 #include <zlib.h>
+#include <msgpack.h>
 
 #include <string.h>
 #include <assert.h>
@@ -38,15 +39,7 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <execinfo.h>
-
 #include <paxos.h>
-
-#define BPTREE_MIN_DEGREE 9 
-#define BPTREE_NODE_SIZE 2 * BPTREE_MIN_DEGREE - 1
-#define BPTREE_MAX_VALUE_SIZE MAX_TRANSACTION_SIZE
-
-#define BPTREE_META_NODE_PACKET_HEADER 0x4
-#define BPTREE_NODE_PACKET_HEADER 0x5
 
 #define TEST_TYPE_INSERT 1
 #define TEST_TYPE_SEARCH 2
@@ -59,33 +52,13 @@
 #undef BPTREE_MARSHALLING_TPL
 #define BPTREE_MARSHALLING_MSGPACK
 
+#define BPTREE_META_NODE_PACKET_HEADER 0x4
+#define BPTREE_NODE_PACKET_HEADER 0x5
+
+
 //#define BPTREE_TPL_NODE_FMT "Ijji#A(B)i#A(B)I#IIIc#"  // pre-UUID move
 #define BPTREE_TPL_NODE_FMT "c#jji#A(B)i#A(B)c##c#c#c#c#" // array of arrays?
 //#define BPTREE_TPL_NODE_FMT "c#jji#A(B)i#A(B)c##c#c#c#c#jii" // array of arrays?
-
-// TODO There is room to optimize space usage in this struct
-typedef struct bptree_node {
-	uuid_t self_key;
-	int16_t key_count;
-	int16_t leaf;
-	uuid_t parent;
-	uuid_t prev_node;
-	uuid_t next_node;
-	char active[BPTREE_NODE_SIZE];
-	int32_t key_sizes[BPTREE_NODE_SIZE];
-	int32_t value_sizes[BPTREE_NODE_SIZE];
-	unsigned char *keys[BPTREE_NODE_SIZE];
-	unsigned char *values[BPTREE_NODE_SIZE];
-	// TODO Dynamically allocate this based on whether this is a leaf or not
-	uuid_t children[BPTREE_NODE_SIZE + 1];
-} bptree_node;
-
-typedef struct bptree_key_val {
-	unsigned char *k;
-	unsigned char *v;
-	int32_t ksize; // these probably could be 16-bit but too much code to change
-	int32_t vsize;
-} bptree_key_val;
 
 // See enum bptree_field_comparator in bplustree_client.h
 typedef int (*bptree_comparator)(const void *a, const void *b, size_t n);
@@ -102,16 +75,7 @@ static bptree_comparator comparators[] =  {
 
 #define BPTREE_TPL_META_NODE_FMT "ic#j"
 
-typedef struct bptree_meta_node {
-//	unsigned char header;
-	uint32_t execution_id;
-	uuid_t root_key;
-	tapioca_bptree_id bpt_id;
-	int32_t last_version; // we will not persist this
-} bptree_meta_node;
-
 typedef struct bptree_session {
-//	uuid_t cursor_cell_id;
 	int16_t cursor_pos;
 	tapioca_bptree_id bpt_id;
 	uint16_t eof;
@@ -123,13 +87,21 @@ typedef struct bptree_session {
 	// Moved from bptree_handle
 	uint32_t execution_id;
 	transaction *t;
-	uuid_t cached_key;
 	uint16_t cached_key_dirty;
 	bptree_node *cursor_node;
 	int tapioca_client_id;
 	int insert_count;
 	enum bptree_insert_flags insert_flags;
 } bptree_session;
+
+typedef struct bptree_meta_node {
+	uint32_t execution_id;
+	uuid_t root_key;
+	tapioca_bptree_id bpt_id;
+	int32_t last_version; // we will not persist this
+} bptree_meta_node;
+
+
 
 int bptree_initialize_bpt_session_no_commit(bptree_session *bps,
 		tapioca_bptree_id bpt_id, enum bptree_open_flags open_flags,
@@ -158,16 +130,20 @@ int bptree_update(bptree_session *bps,  void *k, int32_t ksize,
 int bptree_insert(bptree_session *bps, void *k, int32_t ksize,
 		void *v, int32_t vsize);
 
-inline int bptree_compar_keys(bptree_session *bps,
+int bptree_compar_keys(bptree_session *bps,
 		const bptree_key_val *kv1, const bptree_key_val *kv2);
 //int bptree_compar(bptree_session *bps, const void *b1, const void *b2);
 int bptree_compar(bptree_session *bps, const void *k1, const void *k2,
 		const void *v1, const void *v2, size_t vsize1, size_t vsize2, 
 		int tot_fields);
-inline void get_key_val_from_node(bptree_node *n, int i, bptree_key_val *kv);
+inline void bpnode_get_kv_ref(bptree_node *n, int i, bptree_key_val *kv);
 void copy_key_val(bptree_key_val *dest, bptree_key_val *src);
-bptree_key_val * copy_key_val_from_node(bptree_node *n, int i);
-inline void free_key_val(bptree_key_val **kv);
+bptree_key_val * bpnode_get_kv(bptree_node *n, int i);
+
+void free_meta_node(bptree_meta_node **m);
+
+void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize);
+bptree_meta_node * unmarshall_bptree_meta_node(const void *buf,size_t sz);
 
 /**
  * Searches b+tree for element; if found, set internal cursor to enable
@@ -196,27 +172,21 @@ int write_meta_node(bptree_session *bps,
 int bptree_read_root(bptree_session *bps, bptree_meta_node **bpm,
 		bptree_node **root);
 
-void * marshall_bptree_meta_node(bptree_meta_node *bpm, size_t *bsize);
-//bptree_meta_node * unmarshall_bptree_meta_node(const void *buf);
-bptree_meta_node * unmarshall_bptree_meta_node(const void *buf,size_t sz);
-
-void * marshall_bptree_node(bptree_node *n, size_t *bsize);
-//bptree_node * unmarshall_bptree_node(const void *buf);
-bptree_node * unmarshall_bptree_node(const void *buf, size_t sz, size_t *nsize);
+void bptree_split_child(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr);
 
 //// *** Testing/debug functions
-//int verify_bptree_order(bptree_session *bps,
-//		enum bptree_order_verify mode);
 
 int output_bptree(bptree_session *bps, int i ) ;
 int bptree_sequential_read(bptree_session *bps, int binary);
 
 
-int is_cell_ordered(bptree_session *bps, bptree_node* y);
+int is_node_ordered(bptree_session *bps, bptree_node* y);
 int free_node(bptree_node **n);
 
 void assert_parent_child(bptree_session *bps, bptree_node *p, bptree_node *c);
 void dump_node_info(bptree_session *bps, bptree_node *n);
+void dump_node_info_fp(bptree_session *bps, bptree_node *n, FILE *fp);
 
 void print_trace (void);
 
@@ -225,28 +195,33 @@ void bptree_key_value_to_string(bptree_session *bps, unsigned char *k,
 void bptree_key_value_to_string_kv(bptree_session *bps, bptree_key_val *kv,
 		char *out);
 
-bptree_node * create_new_empty_bptree_node();
-bptree_node * create_new_bptree_node(bptree_session *bps);
 int bptree_debug(bptree_session *bps, enum bptree_debug_option debug_opt,
 		void *data);
 
+// Node assertion functions
 
-/* Definitions that were in the main c file before that we want to be able
-to unit test */
+int is_node_ordered(bptree_session *bps, bptree_node* y);
+int are_split_cells_valid(bptree_session *bps, bptree_node* x, int i, bptree_node *y, bptree_node *n);
+int is_node_sane(bptree_node *n);
+int is_correct_node(bptree_node *n, uuid_t node_key);
+void bptree_free_session(bptree_session **bps);
 
-void shift_bptree_node_elements(bptree_node *x, int pos);
-
-void move_bptree_node_element(bptree_node *s, bptree_node *d,
-		int s_pos, int d_pos, int move);
-void shift_bptree_node_children(bptree_node *x, int pos);
-
-int find_position_in_node(bptree_session *bps, bptree_node *x,
-		bptree_key_val *kv, int *pos);
-
-void copy_key_val_to_node(bptree_node *x, bptree_key_val *kv, int pos);
-
-inline int bptree_compar_to_node(bptree_session *bps,
+int bptree_compar_to_node(bptree_session *bps,
 	bptree_node *x, const bptree_key_val *kv, int pos);
+
+int is_valid_traversal(bptree_session *bps, bptree_node *x,
+		bptree_node *n,int i);
+
+/*@ For *kv, returns whether it was found; k_pos is where it is/would be
+ * in the node, and c_pos is what child position we would find the key
+ * in a further traversal*/
+int find_position_in_node(bptree_session *bps, bptree_node *x,
+		bptree_key_val *kv, int *k_pos, int *c_pos);
+
+void bptree_split_child_leaf(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr);
+void bptree_split_child_nonleaf(bptree_session *bps, bptree_node* p, int i, 
+		       bptree_node* cl, bptree_node *cr);
 
 #ifdef TRACE_MODE
 int write_to_trace_file(int type,  tr_id *t, key* k, val* v, int prev_client);

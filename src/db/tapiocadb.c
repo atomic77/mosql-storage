@@ -79,6 +79,10 @@ static void sigint(int sig) {
 }
 
 
+struct event_base * tapioca_get_event_base()
+{
+	return base;
+}
 int tapioca_init(const char* tconfig, const char* pconfig) {
 	struct timeval now;
 
@@ -131,7 +135,7 @@ void tapioca_start_and_join(void) {
 	rv = cproxy_init(paxos_config, base);
 	assert(rv >= 0);
 	cproxy_submit_join(NodeType, LocalIpAddress, LocalPort);
-	event_dispatch();
+	event_base_dispatch(base);
 }
 
 
@@ -143,7 +147,7 @@ void tapioca_start(int recovery) {
 	assert(rv >= 0);
 	if (recovery)
 		sm_recovery();
-	event_dispatch();
+	event_base_dispatch(base);
 }
 
 void tapioca_dump_store_at_exit(char* path) {

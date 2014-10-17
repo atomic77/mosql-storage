@@ -31,4 +31,9 @@ bool valEqual(val* v1, val* v2);
 bool valVersionEqual(val* v1, val* v2);
 bool matchStorageVersion(key* k, val* v, int version);
 
+int *init_new_int_array(int sz) ;
+int sample_without_replacement(int *arr, int *n);
+
+
+
 #endif

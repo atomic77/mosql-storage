@@ -1,4 +1,5 @@
-
+VALGRIND_OPTIONS=" "
+VALGRIND_EXTRA_OPTIONS=" --track-origins=yes --leak-check=full "
 function do_killall () {
 	local cmd="killall -INT dsmdb cm_node acceptor"
 	echo "$cmd"
@@ -17,7 +18,7 @@ launch_acceptors() {
 	for i in 2 1 0; do
 		cmd="$prefix $PAXOS_DIR/bin/acceptor $i config/paxos_config.cfg "
 		if [ "$2" = "log" ]; then
-			$cmd > /tmp/acceptor$i.log 2> /tmp/acceptor$i.log &
+			$cmd > /tmp/acceptor$i.log 2>&1 &
 		else 
 			$cmd &
 		fi
@@ -32,7 +33,7 @@ launch_proposers() {
 	fi
 	cmd="$prefix $PAXOS_DIR/bin/proposer 0 config/paxos_config.cfg "
 	if [ "$2" = "log" ]; then
-		$cmd > /tmp/proposer0.log 2> /tmp/proposer0.log &
+		$cmd > /tmp/proposer0.log 2>&1  &
 	else
 		$cmd &
 	fi
@@ -47,7 +48,7 @@ launch_rec_nodes () {
 	for i in 2 1 0; do
 		cmd="$prefix bin/rec $i config/paxos_config.cfg "
 		if [ "$2" = "log" ]; then
-			$cmd > /tmp/rec_$i.log 2> /tmp/rec_$i.log &
+			$cmd > /tmp/rec_$i.log 2>&1  &
 		else
 			$cmd &
 		fi
@@ -61,7 +62,7 @@ launch_cm() {
 	fi
 	cmd="$prefix bin/cm config/1.cfg config/paxos_config.cfg"
 	if [ "$2" = "log" ]; then
-		$cmd > /tmp/cm.log 2> /tmp/cm.log &
+		$cmd > /tmp/cm.log 2>&1  &
 	else
 		$cmd &
 	fi
@@ -70,12 +71,12 @@ launch_cm() {
 launch_nodes() {
 	local cmd=""
 	if [ "$1" = "valgrind" ]; then
-		prefix="valgrind $VALGRIND_OPTIONS "
+		prefix="valgrind $VALGRIND_EXTRA_OPTIONS "
 	fi
 	cmd="$prefix bin/tapioca --ip-address $IP_ADDRESS --port 5555 --paxos-config "
 	cmd="$cmd config/paxos_config.cfg  --storage-config config/1.cfg --node-type 0"; 
 	if [ "$2" = "log" ]; then
-		$cmd > /tmp/tapioca0.log 2> /tmp/tapioca0.log &
+		$cmd > /tmp/tapioca0.log 2>&1 &
 	else
 		$cmd &
 	fi

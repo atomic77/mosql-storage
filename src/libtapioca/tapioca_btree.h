@@ -36,6 +36,7 @@
 #define BPTREE_OP_KEY_FOUND 8
 #define BPTREE_OP_EOF 16
 #define BPTREE_OP_KEY_DELETED 32
+#define BPTREE_OP_CURSOR_NOT_SET 64
 // Catch-all for 'good' things we haven't bothered to define yet
 #define BPTREE_OP_SUCCESS 1
 
@@ -56,7 +57,8 @@ enum bptree_debug_option
 	BPTREE_DEBUG_DUMP_SEQUENTIALLY=2, /* _next() based dump of tree */
 	BPTREE_DEBUG_DUMP_RECURSIVELY=3, /* recursive traversal of tree */
 	BPTREE_DEBUG_INDEX_RECURSIVE_SCAN=4, /* multi-node compatible recurs. scan*/
-	BPTREE_DEBUG_DUMP_GRAPHVIZ=5 /* Dump graphviz-viewable tree*/
+	BPTREE_DEBUG_DUMP_GRAPHVIZ=5, /* Dump graphviz-viewable tree*/
+	BPTREE_DEBUG_DUMP_NODE_DETAILS=6
 };
 
 enum bptree_field_comparator {

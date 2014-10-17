@@ -17,7 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "gtest.h"
+#include <gtest/gtest.h>
 #include "tapioca.h"
 #include "util.h"
 #include "test_helpers.h"
